@@ -1403,7 +1403,9 @@
           await navigator.clipboard.writeText(json);
           setStatus('ココフォリア用にコピーしました');
         }catch(err){
-          setStatus('コピーに失敗しました');
+          // clipboard API can be blocked (permissions, non-focused document, older
+          // browsers) -- fall back to a selectable textarea the user can copy manually
+          showCcfoliaCopyModal(json, tok.name);
         }
       });
 
@@ -2394,6 +2396,36 @@
 
   function safeFileName(name){
     return (name || 'シナリオ').replace(/[\\/:*?"<>|]/g, '_');
+  }
+
+  function showCcfoliaCopyModal(json, tokenName){
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box wide">
+        <p>クリップボードに自動コピーできませんでした。下のテキストを選択してコピーし、CCFOLIAの部屋に貼り付けてください（${escapeHtml(tokenName || '(名称未設定の駒)')}）。</p>
+        <textarea readonly spellcheck="false">${escapeHtml(json)}</textarea>
+        <div class="modal-actions">
+          <button data-role="close">閉じる</button>
+          <button class="confirm" data-role="copy">コピー</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const ta = overlay.querySelector('textarea');
+    const close = ()=> overlay.remove();
+    overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
+    overlay.querySelector('[data-role="close"]').addEventListener('click', close);
+    const copyBtn = overlay.querySelector('[data-role="copy"]');
+    copyBtn.addEventListener('click', async ()=>{
+      try{ await navigator.clipboard.writeText(json); }
+      catch(e){ /* execCommand fallback below always runs too */ }
+      ta.focus(); ta.select();
+      try{ document.execCommand('copy'); }catch(e){ /* ignore */ }
+      copyBtn.textContent = 'コピーしました';
+      setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
+    });
+    setTimeout(()=>{ ta.focus(); ta.select(); }, 30);
   }
 
   function showExportModal(){
