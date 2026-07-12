@@ -350,11 +350,6 @@
     color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;border:1px solid var(--line);
   }
   .node-add-clue:hover{color:var(--brass);border-color:var(--brass);}
-  .node-collapse-toggle{
-    flex:0 0 auto;width:16px;height:16px;line-height:14px;text-align:center;
-    color:var(--ink-dim);cursor:pointer;font-size:10px;border-radius:2px;user-select:none;
-  }
-  .node-collapse-toggle:hover{color:var(--brass);}
   .node-body-collapsed{cursor:pointer;}
   .node-body-collapsed:hover .node-preview{color:var(--ink);}
   .node-preview{
@@ -366,6 +361,11 @@
     font-size:10px;padding:2px 6px;border-radius:9px;
     background:var(--panel-2);border:1px solid var(--line);color:var(--ink-dim);
   }
+  .collapse-footer{
+    margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--ink-dim);text-align:center;cursor:pointer;
+  }
+  .collapse-footer:hover{color:var(--brass);}
 
   .clue-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .clue-item{background:rgba(0,0,0,0.15);border-left:2px solid var(--star);border-radius:2px;padding:6px 8px;}
@@ -625,7 +625,6 @@
     .node-head{ gap:5px; }
     .type-dot{ width:18px; height:18px; }
     .node-add-clue{ width:22px; height:22px; line-height:20px; font-size:14px; }
-    .node-collapse-toggle{ width:22px; height:22px; line-height:20px; font-size:12px; }
     .clue-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
     .node-rename{ width:24px; height:24px; line-height:22px; font-size:13px; }
     .node-dup{ width:24px; height:24px; line-height:22px; font-size:13px; }
@@ -1966,7 +1965,8 @@
       const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
       const linkH = 26;
       const currentRowH = 26;
-      h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH;
+      const collapseFooterH = 24;
+      h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH + collapseFooterH;
     }
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
@@ -2402,12 +2402,12 @@
           ${enemyStatsHtml}
           ${linkHtml}
           ${currentRowHtml}
+          <div class="collapse-footer" data-role="collapsefooter" title="折りたたむ">▲ 折りたたむ</div>
         </div>`;
 
       el.innerHTML = `
         <div class="node-head">
           <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
-          <span class="node-collapse-toggle" data-role="collapsetoggle" title="${n.collapsed ? '展開' : '折りたたむ'}">${n.collapsed ? '▸' : '▾'}</span>
           <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
           <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
           <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
@@ -2419,12 +2419,15 @@
       `;
       canvas.appendChild(el);
 
-      const collapseToggleEl = el.querySelector('[data-role="collapsetoggle"]');
-      collapseToggleEl.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        n.collapsed = !n.collapsed;
-        render(); save(); applyViewport();
-      });
+      const collapseFooterEl = el.querySelector('[data-role="collapsefooter"]');
+      if(collapseFooterEl){
+        collapseFooterEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        collapseFooterEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          n.collapsed = true;
+          render(); save(); applyViewport();
+        });
+      }
 
       const collapsedBodyEl = el.querySelector('[data-role="bodycollapsed"]');
       if(collapsedBodyEl){
@@ -2438,7 +2441,7 @@
       // drag node by header (pointer events: mouse + touch)
       const head = el.querySelector('.node-head');
       head.addEventListener('pointerdown', (e)=>{
-        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addclue' || e.target.dataset.role==='collapsetoggle') return;
+        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addclue') return;
         if(e.ctrlKey || e.metaKey){
           e.stopPropagation();
           e.preventDefault();
@@ -3250,6 +3253,7 @@
           links: Array.isArray(g.links) ? g.links : [],
           notes: Array.isArray(g.notes) ? g.notes : [],
           tokens: Array.isArray(g.tokens) ? g.tokens : [],
+          currentNodeId: g.currentNodeId || null,
         }));
       });
       saveProjectsList();
