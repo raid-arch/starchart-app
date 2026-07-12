@@ -304,9 +304,6 @@
     width:10px;height:10px;border-radius:50%;flex:0 0 auto;cursor:pointer;
     border:1px solid rgba(0,0,0,0.3);
   }
-  .branch-badge{
-    flex:0 0 auto;color:#8a6fb0;font-size:11px;line-height:1;
-  }
   .node-title{
     flex:1;font-family:'Shippori Mincho',serif;font-weight:700;font-size:13px;
     outline:none;color:var(--ink);letter-spacing:0.02em;
@@ -2120,7 +2117,6 @@
         el.innerHTML = `
           <div class="node-head viewer-head">
             <span class="type-dot" style="background:${t.color}"></span>
-            ${n.type==='choice' ? '<span class="branch-badge">◆</span>' : ''}
             <div class="node-title viewer-title">${escapeHtml(n.title || '(無題)')}</div>
             ${state.currentNodeId === n.id ? '<span class="current-badge">現在地</span>' : ''}
           </div>
@@ -2182,7 +2178,6 @@
         <div class="node-head">
           <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
           <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
-          ${n.type==='choice' ? '<span class="branch-badge">◆</span>' : ''}
           <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
           <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
           <span class="node-dup" data-role="dup" title="複製">⧉</span>
