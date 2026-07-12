@@ -195,6 +195,12 @@
     color:var(--ink);font-size:11.5px;padding:3px 2px;text-align:center;font-family:monospace;
   }
   .token-stat-field input:focus{border-color:var(--brass);outline:none;}
+  .token-derived-label{font-size:9.5px;color:var(--ink-dim);letter-spacing:0.04em;margin:2px 0 3px;}
+  .token-derived-preview{
+    font-family:monospace;font-size:11px;color:var(--brass-dim);
+    background:var(--panel);border:1px solid var(--line);border-radius:2px;
+    padding:5px 7px;
+  }
   .token-skills-label{font-size:9.5px;color:var(--ink-dim);letter-spacing:0.04em;margin:2px 0 3px;}
   .token-item-skills{
     font-family:monospace;font-size:11px;line-height:1.5;color:var(--ink-dim);
@@ -791,8 +797,28 @@
   document.querySelectorAll('#editionTabs button').forEach(b=>{
     b.addEventListener('click', ()=>{
       const p = currentProject();
-      if(!p || p.edition === b.dataset.edition) return;
-      p.edition = b.dataset.edition;
+      const newEdition = b.dataset.edition;
+      if(!p || p.edition === newEdition) return;
+      // 6th-edition characteristics are rolled on a 3-18 scale; 7th rescaled
+      // everything to percentile (x5). Convert every token's stored STR/CON/etc
+      // so they land on the right scale for the new edition -- derived stats
+      // (SAN, HP, ...) are calculated fresh each time, so they never need this.
+      if(state.tokens.length){
+        const factor = (p.edition === '6th' && newEdition === '7th') ? 5
+          : (p.edition === '7th' && newEdition === '6th') ? (1/5)
+          : null;
+        if(factor){
+          pushHistory();
+          state.tokens.forEach(t=>{
+            TOKEN_CHAR_FIELDS.forEach(([key])=>{
+              const v = parseFloat(t[key]);
+              if(!isNaN(v)) t[key] = String(Math.round(v * factor));
+            });
+          });
+          save();
+        }
+      }
+      p.edition = newEdition;
       saveProjectsList();
       updateEditionTabs();
       render();
@@ -1082,21 +1108,74 @@
      node keeps that node's enemy-stats display in sync with the token, so
      editing the token updates every scene that uses it. */
   const TOKEN_CHAR_FIELDS = [['str','STR'],['con','CON'],['pow','POW'],['dex','DEX'],['app','APP'],['siz','SIZ'],['int','INT'],['edu','EDU']];
-  const TOKEN_DERIVED_FIELDS_7TH = [['hp','HP'],['mp','MP'],['san','SAN'],['db','DB'],['build','ビルド'],['mov','MOV']];
-  const TOKEN_DERIVED_FIELDS_6TH = [['hp','HP'],['mp','MP'],['san','SAN'],['db','DB'],['mov','MOV']];
-  function tokenDerivedFields(edition){ return edition === '6th' ? TOKEN_DERIVED_FIELDS_6TH : TOKEN_DERIVED_FIELDS_7TH; }
 
   function getToken(id){
     return state.tokens.find(t=>t.id===id) || null;
   }
 
+  /* ---- derived stats (HP/MP/SAN/DB/ビルド/MOV) are always calculated from
+     the characteristics -- never stored -- so they can't drift out of sync ---- */
+  function numOr0(v){ const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
+
+  function calcDamageBonus(str, siz, edition){
+    const sum = str + siz;
+    if(edition === '6th'){
+      if(sum <= 12) return { db: '-1D6', build: null };
+      if(sum <= 16) return { db: '-1D4', build: null };
+      if(sum <= 24) return { db: '0', build: null };
+      if(sum <= 32) return { db: '+1D4', build: null };
+      if(sum <= 40) return { db: '+1D6', build: null };
+      if(sum <= 56) return { db: '+2D6', build: null };
+      if(sum <= 72) return { db: '+3D6', build: null };
+      if(sum <= 88) return { db: '+4D6', build: null };
+      const extra = Math.ceil((sum - 88) / 16);
+      return { db: `+${4 + extra}D6`, build: null };
+    }
+    if(sum <= 64) return { db: '-2', build: -2 };
+    if(sum <= 84) return { db: '-1', build: -1 };
+    if(sum <= 124) return { db: '0', build: 0 };
+    if(sum <= 164) return { db: '+1D4', build: 1 };
+    if(sum <= 204) return { db: '+1D6', build: 2 };
+    if(sum <= 284) return { db: '+2D6', build: 3 };
+    if(sum <= 364) return { db: '+3D6', build: 4 };
+    if(sum <= 444) return { db: '+4D6', build: 5 };
+    const extra = Math.ceil((sum - 444) / 80);
+    return { db: `+${4 + extra}D6`, build: 5 + extra };
+  }
+
+  function calcMove(str, dex, siz){
+    if(str < siz && dex < siz) return 7;
+    if(str >= siz && dex >= siz) return 9;
+    return 8;
+  }
+
+  function calcDerivedStats(t, edition){
+    const str = numOr0(t.str), con = numOr0(t.con), pow = numOr0(t.pow);
+    const dex = numOr0(t.dex), siz = numOr0(t.siz);
+    // 6th-edition characteristics are on the small 3-18 scale (POW as MP,
+    // POW x5 as SAN); 7th rescaled everything to percentile, so POW itself
+    // is already the SAN value and MP is POW/5
+    const hp = Math.floor((con + siz) / (edition === '6th' ? 2 : 10));
+    const mp = edition === '6th' ? pow : Math.floor(pow / 5);
+    const san = edition === '6th' ? pow * 5 : pow;
+    const { db, build } = calcDamageBonus(str, siz, edition);
+    const mov = edition === '7th' ? calcMove(str, dex, siz) : null;
+    return { hp, mp, san, db, build, mov };
+  }
+
+  function formatDerivedStats(t, edition){
+    const d = calcDerivedStats(t, edition);
+    const parts = [`HP${d.hp}`, `MP${d.mp}`, `SAN${d.san}`, `DB${d.db}`];
+    if(edition === '7th'){ parts.push(`ビルド${d.build}`); parts.push(`MOV${d.mov}`); }
+    return parts.join(' ');
+  }
+
   function formatTokenStats(t, edition){
     if(!t) return '';
     const charStr = TOKEN_CHAR_FIELDS.map(([k,label])=> t[k] ? label+t[k] : null).filter(Boolean).join(' ');
-    const derivedStr = tokenDerivedFields(edition).map(([k,label])=> t[k] ? label+t[k] : null).filter(Boolean).join(' ');
     const parts = [];
     if(charStr) parts.push(charStr);
-    if(derivedStr) parts.push(derivedStr);
+    parts.push(formatDerivedStats(t, edition));
     if(t.skills) parts.push('技能: ' + t.skills);
     return parts.join(' / ');
   }
@@ -1104,7 +1183,7 @@
   function createToken(){
     pushHistory();
     const t = { id: uid(), name: '', skills: '' };
-    TOKEN_CHAR_FIELDS.concat(TOKEN_DERIVED_FIELDS_7TH).forEach(([k])=>{ t[k] = ''; });
+    TOKEN_CHAR_FIELDS.forEach(([k])=>{ t[k] = ''; });
     state.tokens.push(t);
     save();
     renderTokenList();
@@ -1155,11 +1234,6 @@
         <label>${label}</label>
         <input type="text" inputmode="numeric" data-stat="${key}" value="${escapeHtml(t[key]||'')}" />
       </div>`).join('');
-    const derivedInputsHtml = t => tokenDerivedFields(edition).map(([key,label]) => `
-      <div class="token-stat-field">
-        <label>${label}</label>
-        <input type="text" data-stat="${key}" value="${escapeHtml(t[key]||'')}" />
-      </div>`).join('');
 
     listEl.innerHTML = state.tokens.map(t => `
       <div class="token-item" data-token-item-id="${t.id}">
@@ -1167,7 +1241,8 @@
         <div class="token-item-main">
           <div class="token-item-name" data-role="name" contenteditable="true" spellcheck="false">${escapeHtml(t.name)}</div>
           <div class="token-stat-grid">${charInputsHtml(t)}</div>
-          <div class="token-stat-grid">${derivedInputsHtml(t)}</div>
+          <div class="token-derived-label">自動計算</div>
+          <div class="token-derived-preview" data-role="derived">${escapeHtml(formatDerivedStats(t, edition))}</div>
           <div class="token-skills-label">技能値（自由記述）</div>
           <div class="token-item-skills" data-role="skills" contenteditable="true" spellcheck="false" data-placeholder="回避50 こぶし50 目星25...">${escapeHtml(t.skills||'')}</div>
         </div>
@@ -1191,6 +1266,7 @@
       });
       nameEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); nameEl.blur(); } });
 
+      const derivedEl = itemEl.querySelector('[data-role="derived"]');
       itemEl.querySelectorAll('input[data-stat]').forEach(inputEl=>{
         inputEl.addEventListener('focus', ()=>{ inputEl.dataset.before = inputEl.value; });
         inputEl.addEventListener('blur', ()=>{
@@ -1200,6 +1276,10 @@
           if(tok){
             if(val !== inputEl.dataset.before) pushHistory();
             tok[key] = val; save(); render();
+            // refresh just this token's computed-stats preview, without
+            // rebuilding the whole list (which would break tab-order/focus
+            // while filling in several stat fields in a row)
+            if(derivedEl) derivedEl.textContent = formatDerivedStats(tok, projectEdition());
           }
         });
         inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); inputEl.blur(); } });
