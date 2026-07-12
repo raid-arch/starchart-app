@@ -14,6 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="星図">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --void:#0a0a12;
@@ -145,6 +146,10 @@
   .project-panel.open{max-height:70vh;opacity:1;overflow-y:auto;pointer-events:auto;}
   .project-panel-inner{padding:10px;}
   .project-list{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+  .drive-sync{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+  .drive-sync-status{font-size:10.5px;color:var(--ink-dim);margin-bottom:6px;line-height:1.4;}
+  .drive-sync-buttons{display:flex;flex-direction:column;gap:6px;}
+  .drive-sync-buttons button{width:100%;}
   .project-item{
     display:flex;align-items:center;gap:6px;padding:8px 9px;border-radius:3px;
     border:1px solid transparent;cursor:pointer;
@@ -345,6 +350,22 @@
     color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;border:1px solid var(--line);
   }
   .node-add-clue:hover{color:var(--brass);border-color:var(--brass);}
+  .node-collapse-toggle{
+    flex:0 0 auto;width:16px;height:16px;line-height:14px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:10px;border-radius:2px;user-select:none;
+  }
+  .node-collapse-toggle:hover{color:var(--brass);}
+  .node-body-collapsed{cursor:pointer;}
+  .node-body-collapsed:hover .node-preview{color:var(--ink);}
+  .node-preview{
+    font-size:12px;color:var(--ink-dim);line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .node-summary-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+  .node-badge{
+    font-size:10px;padding:2px 6px;border-radius:9px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink-dim);
+  }
 
   .clue-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .clue-item{background:rgba(0,0,0,0.15);border-left:2px solid var(--star);border-radius:2px;padding:6px 8px;}
@@ -604,6 +625,7 @@
     .node-head{ gap:5px; }
     .type-dot{ width:18px; height:18px; }
     .node-add-clue{ width:22px; height:22px; line-height:20px; font-size:14px; }
+    .node-collapse-toggle{ width:22px; height:22px; line-height:20px; font-size:12px; }
     .clue-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
     .node-rename{ width:24px; height:24px; line-height:22px; font-size:13px; }
     .node-dup{ width:24px; height:24px; line-height:22px; font-size:13px; }
@@ -640,6 +662,14 @@
       <div class="project-panel-inner">
         <div class="project-list" id="projectList"></div>
         <button class="fullwidth primary" id="newProjectBtn">＋ 新規プロジェクト</button>
+        <div class="drive-sync" id="driveSync">
+          <div class="drive-sync-status" id="driveSyncStatus">Google Driveと同期：未ログイン</div>
+          <div class="drive-sync-buttons">
+            <button id="driveSignInBtn">Googleでログイン</button>
+            <button id="driveUploadBtn" style="display:none;">Driveに保存</button>
+            <button id="driveDownloadBtn" style="display:none;">Driveから読み込む</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -683,6 +713,7 @@
         <div class="details-section">
           <h3>整理・データ（このプロジェクト）</h3>
           <button class="fullwidth" id="layoutBtn" style="margin-bottom:8px;">🧭 接続にそって整列</button>
+          <button class="fullwidth" id="collapseAllBtn" style="margin-bottom:8px;">▾ 全ノードの折りたたみ切替</button>
           <div style="display:flex;gap:8px;">
             <button id="exportBtn" style="flex:1;">書き出し</button>
             <button id="importBtn" style="flex:1;">読み込み</button>
@@ -968,6 +999,7 @@
             }
             delete n.tokenId;
             if(!Array.isArray(n.clues)) n.clues = [];
+            if(typeof n.collapsed !== 'boolean') n.collapsed = false;
           });
           return parsed;
         }
@@ -1079,6 +1111,171 @@
     renderProjectList();
   }
 
+  /* ---- Google Drive sync (manual push/pull backup of every project) ----
+     Uses Google Identity Services' token client (popup-based, no redirect URI
+     needed) with the drive.file scope, which only ever grants access to the
+     single backup file this app itself creates -- never the rest of the
+     user's Drive. Sync is manual (two buttons) rather than automatic so a
+     stale copy on one device can never silently clobber a newer one. */
+  const DRIVE_CLIENT_ID = '896573996776-jes5ok2jlrdsf3aljgb42b8d1gojd69o.apps.googleusercontent.com';
+  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  const DRIVE_FILE_NAME = 'scene-map-backup.json';
+  const DRIVE_FILE_ID_KEY = 'scene-map-drive-file-id';
+
+  let driveAccessToken = null;
+  let driveTokenClient = null;
+
+  function driveSetStatus(text){
+    const el = document.getElementById('driveSyncStatus');
+    if(el) el.textContent = text;
+  }
+
+  function driveEnsureTokenClient(){
+    if(driveTokenClient) return driveTokenClient;
+    if(!window.google || !google.accounts || !google.accounts.oauth2){
+      driveSetStatus('Google連携スクリプトを読み込めませんでした（オフライン？）');
+      return null;
+    }
+    driveTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: DRIVE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: (resp)=>{
+        if(resp && resp.access_token){
+          driveAccessToken = resp.access_token;
+          driveSetStatus('ログイン済み');
+          document.getElementById('driveSignInBtn').style.display = 'none';
+          document.getElementById('driveUploadBtn').style.display = '';
+          document.getElementById('driveDownloadBtn').style.display = '';
+        }else{
+          driveSetStatus('ログインに失敗しました');
+        }
+      },
+    });
+    return driveTokenClient;
+  }
+
+  function driveSignIn(){
+    const client = driveEnsureTokenClient();
+    if(!client) return;
+    driveSetStatus('ログイン中…');
+    client.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+  }
+
+  function driveBuildBackup(){
+    const graphs = {};
+    projects.forEach(p=>{
+      graphs[p.id] = (p.id === activeProjectId) ? state : loadGraphFor(p.id);
+    });
+    return JSON.stringify({ v: 1, exportedAt: Date.now(), projects, graphs });
+  }
+
+  async function driveFindFileId(){
+    const cached = localStorage.getItem(DRIVE_FILE_ID_KEY);
+    if(cached) return cached;
+    const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`, {
+      headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+    });
+    if(!res.ok) throw new Error('検索に失敗（' + res.status + '）');
+    const data = await res.json();
+    if(data.files && data.files.length){
+      localStorage.setItem(DRIVE_FILE_ID_KEY, data.files[0].id);
+      return data.files[0].id;
+    }
+    return null;
+  }
+
+  async function driveCreateFile(content){
+    const boundary = 'scenemap_' + Math.random().toString(36).slice(2);
+    const metadata = { name: DRIVE_FILE_NAME, mimeType: 'application/json' };
+    const body =
+      `--${boundary}\r\n` +
+      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify(metadata) + `\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Type: application/json\r\n\r\n` +
+      content + `\r\n` +
+      `--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + driveAccessToken,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    });
+    if(!res.ok) throw new Error('作成に失敗（' + res.status + '）');
+    return res.json();
+  }
+
+  async function driveUpdateFile(fileId, content){
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'Bearer ' + driveAccessToken,
+        'Content-Type': 'application/json',
+      },
+      body: content,
+    });
+    if(!res.ok) throw new Error('更新に失敗（' + res.status + '）');
+    return res.json();
+  }
+
+  async function driveUpload(){
+    if(!driveAccessToken){ driveSetStatus('先にログインしてください'); return; }
+    driveSetStatus('Driveに保存中…');
+    try{
+      save();
+      const content = driveBuildBackup();
+      let fileId = await driveFindFileId();
+      if(fileId){
+        await driveUpdateFile(fileId, content);
+      }else{
+        const created = await driveCreateFile(content);
+        fileId = created.id;
+        localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
+      }
+      driveSetStatus('保存しました（' + new Date().toLocaleString('ja-JP') + '）');
+    }catch(e){
+      driveSetStatus('保存に失敗しました：' + e.message);
+    }
+  }
+
+  async function driveDownload(){
+    if(!driveAccessToken){ driveSetStatus('先にログインしてください'); return; }
+    driveSetStatus('Driveから読み込み中…');
+    try{
+      const fileId = await driveFindFileId();
+      if(!fileId){ driveSetStatus('Drive上にバックアップが見つかりません'); return; }
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+      });
+      if(!res.ok) throw new Error('取得に失敗（' + res.status + '）');
+      const data = await res.json();
+      if(!data || !Array.isArray(data.projects) || !data.graphs) throw new Error('データ形式が不正です');
+      if(!confirm('Driveのデータでこの端末の全プロジェクトを上書きします。よろしいですか？')){
+        driveSetStatus('キャンセルしました');
+        return;
+      }
+      localStorage.setItem(PROJECTS_KEY, JSON.stringify(data.projects));
+      Object.keys(data.graphs).forEach(pid=>{
+        localStorage.setItem(graphKey(pid), JSON.stringify(data.graphs[pid]));
+      });
+      driveSetStatus('読み込みました。再読込します…');
+      setTimeout(()=> location.reload(), 600);
+    }catch(e){
+      driveSetStatus('読み込みに失敗しました：' + e.message);
+    }
+  }
+
+  function initDriveSync(){
+    const signInBtn = document.getElementById('driveSignInBtn');
+    if(!signInBtn) return;
+    signInBtn.addEventListener('click', driveSignIn);
+    document.getElementById('driveUploadBtn').addEventListener('click', driveUpload);
+    document.getElementById('driveDownloadBtn').addEventListener('click', driveDownload);
+  }
+
   function deleteProject(id){
     if(projects.length <= 1) return; // always keep at least one project
     projects = projects.filter(p=>p.id!==id);
@@ -1162,6 +1359,7 @@
     render();
     renderTokenList();
     applyViewport();
+    initDriveSync();
   }
 
   let saveTimer = null;
@@ -1595,6 +1793,7 @@
     const n = {
       id: uid(), x: px, y: py, title: '', text: '',
       type: t, stars: t === 'ending' ? 3 : 0, linkTo: null, enemyStats: '', tokenIds: [], clues: [],
+      collapsed: false,
     };
     pushHistory();
     state.nodes.push(n);
@@ -1756,14 +1955,19 @@
       if(side==='left') return { x: n.x, y: n.y + headH/2 };
       return { x: n.x + w/2, y: n.y + headH/2 };
     }
-    const bodyH = Math.max(40, 20 + Math.ceil((n.text||'').length/22)*16);
-    const starH = n.type === 'ending' ? 26 : 0;
-    const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? n.tokenIds.length : 0;
-    const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
-    const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
-    const linkH = 26;
-    const currentRowH = 26;
-    const h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH;
+    let h;
+    if(n.collapsed){
+      h = headH + 54;
+    }else{
+      const bodyH = Math.max(40, 20 + Math.ceil((n.text||'').length/22)*16);
+      const starH = n.type === 'ending' ? 26 : 0;
+      const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? n.tokenIds.length : 0;
+      const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
+      const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
+      const linkH = 26;
+      const currentRowH = 26;
+      h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH;
+    }
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
     return { x: n.x + w/2, y: n.y + h/2 };
@@ -2174,15 +2378,23 @@
             </div>`).join('')}
         </div>` : '';
 
-      el.innerHTML = `
-        <div class="node-head">
-          <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
-          <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
-          <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
-          <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
-          <span class="node-dup" data-role="dup" title="複製">⧉</span>
-          <span class="node-del" data-role="del">×</span>
-        </div>
+      const bodyHtml = n.collapsed ? (()=>{
+        const preview = (n.text||'').trim();
+        const previewText = preview ? (preview.length > 46 ? preview.slice(0,46) + '…' : preview) : '（内容なし）';
+        const badges = [];
+        if(n.clues && n.clues.length) badges.push(`手がかり${n.clues.length}`);
+        if(n.type === 'battle' && (n.enemyStats||'').trim()) badges.push('敵ステータスあり');
+        if(linkedTokens.length) badges.push(`駒${linkedTokens.length}`);
+        if(n.type === 'ending') badges.push('★' + (n.stars||0));
+        if(linkTarget) badges.push('リンクあり');
+        if(isCurrent) badges.push('現在地');
+        const badgesHtml = badges.length ? `<div class="node-summary-badges">${badges.map(b=>`<span class="node-badge">${escapeHtml(b)}</span>`).join('')}</div>` : '';
+        return `
+          <div class="node-body node-body-collapsed" data-role="bodycollapsed" title="タップで展開">
+            <div class="node-preview">${escapeHtml(previewText)}</div>
+            ${badgesHtml}
+          </div>`;
+      })() : `
         <div class="node-body">
           <div class="node-text" contenteditable="true" spellcheck="false" data-role="text">${escapeHtml(n.text)}</div>
           ${cluesHtml}
@@ -2190,15 +2402,43 @@
           ${enemyStatsHtml}
           ${linkHtml}
           ${currentRowHtml}
+        </div>`;
+
+      el.innerHTML = `
+        <div class="node-head">
+          <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
+          <span class="node-collapse-toggle" data-role="collapsetoggle" title="${n.collapsed ? '展開' : '折りたたむ'}">${n.collapsed ? '▸' : '▾'}</span>
+          <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
+          <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
+          <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
+          <span class="node-dup" data-role="dup" title="複製">⧉</span>
+          <span class="node-del" data-role="del">×</span>
         </div>
+        ${bodyHtml}
         <div class="connect-handle" data-role="handle" title="ドラッグして接続"></div>
       `;
       canvas.appendChild(el);
 
+      const collapseToggleEl = el.querySelector('[data-role="collapsetoggle"]');
+      collapseToggleEl.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        n.collapsed = !n.collapsed;
+        render(); save(); applyViewport();
+      });
+
+      const collapsedBodyEl = el.querySelector('[data-role="bodycollapsed"]');
+      if(collapsedBodyEl){
+        collapsedBodyEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          n.collapsed = false;
+          render(); save(); applyViewport();
+        });
+      }
+
       // drag node by header (pointer events: mouse + touch)
       const head = el.querySelector('.node-head');
       head.addEventListener('pointerdown', (e)=>{
-        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addclue') return;
+        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addclue' || e.target.dataset.role==='collapsetoggle') return;
         if(e.ctrlKey || e.metaKey){
           e.stopPropagation();
           e.preventDefault();
@@ -2264,12 +2504,14 @@
       });
 
       const textEl = el.querySelector('[data-role="text"]');
-      textEl.addEventListener('focus', ()=>{ textEl.dataset.before = n.text; });
-      textEl.addEventListener('blur', ()=>{
-        const val = textEl.textContent.trim();
-        if(val !== textEl.dataset.before) pushHistory();
-        n.text = val; save(); render(); applyViewport();
-      });
+      if(textEl){
+        textEl.addEventListener('focus', ()=>{ textEl.dataset.before = n.text; });
+        textEl.addEventListener('blur', ()=>{
+          const val = textEl.textContent.trim();
+          if(val !== textEl.dataset.before) pushHistory();
+          n.text = val; save(); render(); applyViewport();
+        });
+      }
 
       el.querySelectorAll('[data-role="clue-condition"]').forEach(inputEl=>{
         const clueId = inputEl.dataset.clueId;
@@ -2330,32 +2572,36 @@
 
       // jump-link row
       const linkRow = el.querySelector('[data-role="linkrow"]');
-      linkRow.addEventListener('pointerdown', (e)=> e.stopPropagation());
-      linkRow.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        if(e.target.dataset.role === 'linkclear') return; // handled separately
-        const target = n.linkTo ? state.nodes.find(x=>x.id===n.linkTo) : null;
-        if(target){ jumpToNode(target.id); }
-        else { openNodePicker(n, linkRow); }
-      });
-      const linkClear = el.querySelector('[data-role="linkclear"]');
-      if(linkClear){
-        linkClear.addEventListener('click', (e)=>{
+      if(linkRow){
+        linkRow.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        linkRow.addEventListener('click', (e)=>{
           e.stopPropagation();
-          pushHistory();
-          n.linkTo = null;
-          render();
-          save();
-          applyViewport();
+          if(e.target.dataset.role === 'linkclear') return; // handled separately
+          const target = n.linkTo ? state.nodes.find(x=>x.id===n.linkTo) : null;
+          if(target){ jumpToNode(target.id); }
+          else { openNodePicker(n, linkRow); }
         });
+        const linkClear = el.querySelector('[data-role="linkclear"]');
+        if(linkClear){
+          linkClear.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            pushHistory();
+            n.linkTo = null;
+            render();
+            save();
+            applyViewport();
+          });
+        }
       }
 
       const currentRow = el.querySelector('[data-role="currentrow"]');
-      currentRow.addEventListener('pointerdown', (e)=> e.stopPropagation());
-      currentRow.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        setCurrentNode(n.id);
-      });
+      if(currentRow){
+        currentRow.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        currentRow.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          setCurrentNode(n.id);
+        });
+      }
 
       // delete
       el.querySelector('[data-role="del"]').addEventListener('click', (e)=>{
@@ -3079,6 +3325,15 @@
     fitView();
   }
   document.getElementById('layoutBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); autoLayout(); });
+
+  function toggleAllCollapsed(){
+    const anyExpanded = state.nodes.some(n=>!n.collapsed);
+    state.nodes.forEach(n=>{ n.collapsed = anyExpanded; });
+    render();
+    save();
+    applyViewport();
+  }
+  document.getElementById('collapseAllBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); toggleAllCollapsed(); });
 
   document.getElementById('undoBtn').addEventListener('click', undo);
   document.getElementById('redoBtn').addEventListener('click', redo);

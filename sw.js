@@ -38,6 +38,11 @@ self.addEventListener('fetch', (event) => {
   // cache:'no-store' bypasses the browser's own HTTP cache (GitHub Pages serves
   // index.html with a 10-minute max-age) so a fresh deploy shows up immediately
   // instead of silently re-caching a stale copy for up to 10 more minutes.
+  // Drive sync calls must always hit the network fresh -- never serve a
+  // cached copy of a file search or file download, or "read from Drive"
+  // could silently return stale data.
+  if (req.url.includes('googleapis.com')) return;
+
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req, { cache: 'no-store' })
