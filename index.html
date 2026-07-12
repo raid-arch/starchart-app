@@ -208,6 +208,12 @@
   }
   .token-item-skills:empty:before{content:attr(data-placeholder);color:#5c5870;}
   .token-item-name:focus, .token-item-skills:focus{color:var(--ink);}
+  .token-item-save-template{
+    flex:0 0 auto;align-self:flex-start;white-space:nowrap;
+    padding:3px 6px;font-size:10px;color:var(--ink-dim);
+    border:1px solid var(--line);border-radius:10px;cursor:pointer;
+  }
+  .token-item-save-template:hover{color:var(--brass);border-color:var(--brass);}
   .token-item-copy{
     flex:0 0 auto;width:20px;height:20px;line-height:18px;text-align:center;
     color:var(--ink-dim);cursor:pointer;font-size:14px;border-radius:2px;
@@ -384,11 +390,15 @@
   }
   .node-picker .picker-list{overflow-y:auto;max-height:230px;}
   .node-picker .picker-item{
-    display:flex;align-items:center;gap:7px;padding:8px 10px;font-size:12px;
+    display:flex;align-items:center;justify-content:space-between;gap:7px;padding:8px 10px;font-size:12px;
     color:var(--ink);cursor:pointer;border-bottom:1px solid rgba(58,54,72,0.5);
   }
   .node-picker .picker-item:hover{background:var(--panel-2);color:var(--brass);}
   .node-picker .picker-item .pdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;}
+  .node-picker .picker-item-del{
+    flex:0 0 auto;color:var(--ink-dim);font-size:13px;padding:2px 4px;border-radius:2px;
+  }
+  .node-picker .picker-item-del:hover{color:var(--blood);}
   .node-picker .picker-empty{padding:14px 10px;font-size:12px;color:var(--ink-dim);text-align:center;}
 
   @keyframes flashPulse{
@@ -560,6 +570,7 @@
     .token-drag-handle{ padding:8px 6px; font-size:16px; }
     .token-item-copy{ width:28px; height:28px; line-height:26px; font-size:16px; }
     .token-item-del{ width:28px; height:28px; line-height:26px; font-size:16px; }
+    .token-item-save-template{ padding:6px 9px; font-size:11.5px; }
     .token-stat-field input{ padding:6px 2px; font-size:13px; }
     .linked-token-chip{ padding:7px 10px; }
     .linked-token-unlink{ font-size:15px; padding:2px 4px; }
@@ -596,9 +607,9 @@
           <div class="token-list" id="tokenList"></div>
           <div style="display:flex;gap:8px;margin-top:8px;">
             <button class="primary" id="newTokenBtn" style="flex:1;">＋ 新規の駒</button>
-            <button id="newCreatureBtn" style="flex:1;">神話生物から作成</button>
+            <button id="newFromTemplateBtn" style="flex:1;">テンプレートから作成</button>
           </div>
-          <div class="hint" style="margin-top:8px;">左の⠿⠿をドラッグして戦闘シーンのノードにドロップすると連携します（連携後は駒を編集すると連携中の全ノードに反映されます）。神話生物のステータスは目安です。必要に応じて調整してください。</div>
+          <div class="hint" style="margin-top:8px;">左の⠿⠿をドラッグして戦闘シーンのノードにドロップすると連携します（連携後は駒を編集すると連携中の全ノードに反映されます）。駒の「テンプレ化」でプロジェクトを跨いで使えるテンプレートとして保存できます。</div>
         </div>
       </div>
     </div>
@@ -864,9 +875,9 @@
     e.stopPropagation();
     createToken();
   });
-  document.getElementById('newCreatureBtn').addEventListener('click', (e)=>{
+  document.getElementById('newFromTemplateBtn').addEventListener('click', (e)=>{
     e.stopPropagation();
-    openCreaturePicker(e.currentTarget);
+    openTemplatePicker(e.currentTarget);
   });
 
   /* ---- responsive node width kept in sync with CSS ---- */
@@ -1084,6 +1095,7 @@
   }
 
   function load(){
+    loadCreatureTemplates();
     initProjects();
     state = loadGraphFor(activeProjectId);
     updateProjectLabel();
@@ -1140,35 +1152,36 @@
      editing the token updates every scene that uses it. */
   const TOKEN_CHAR_FIELDS = [['str','STR'],['con','CON'],['pow','POW'],['dex','DEX'],['app','APP'],['siz','SIZ'],['int','INT'],['edu','EDU']];
 
-  // approximate starting stats for common Mythos creatures (7th-edition/percentile
-  // scale -- converted to 6th-edition scale automatically for 6th-edition projects).
-  // these are rough, generic reference values meant as a quick starting point for
-  // a one-off encounter, not a verbatim reproduction of any sourcebook -- adjust
-  // them to taste once created.
-  const MYTHOS_CREATURES = [
-    { name:'ディープワン', str:'70', con:'65', pow:'50', dex:'40', app:'25', siz:'75', int:'60', edu:'',
-      skills:'回避30 かみつき50 組み付き60 目星50' },
-    { name:'グール', str:'80', con:'70', pow:'40', dex:'60', app:'10', siz:'65', int:'40', edu:'',
-      skills:'回避40 かみつき50 組み付き60 隠れる50 忍び歩き40' },
-    { name:'バイアクヘー', str:'60', con:'55', pow:'45', dex:'70', app:'15', siz:'60', int:'35', edu:'',
-      skills:'回避50 かみつき40 組み付き45 隠れる35' },
-    { name:'ショゴス', str:'200', con:'200', pow:'80', dex:'30', app:'0', siz:'250', int:'50', edu:'',
-      skills:'回避10 押しつぶす70 変形50' },
-    { name:'ゾンビ', str:'60', con:'100', pow:'30', dex:'25', app:'0', siz:'65', int:'20', edu:'',
-      skills:'回避10 組み付き50' },
-    { name:'ミ=ゴ', str:'65', con:'55', pow:'65', dex:'60', app:'30', siz:'55', int:'80', edu:'60',
-      skills:'回避50 はさみ55 化学45 天文45' },
-    { name:'ハンティング・ホラー', str:'90', con:'80', pow:'70', dex:'65', app:'15', siz:'100', int:'40', edu:'',
-      skills:'回避45 かみつき60 締め付け55' },
-    { name:'ナイトゴーント', str:'70', con:'60', pow:'45', dex:'75', app:'20', siz:'65', int:'30', edu:'',
-      skills:'回避55 組み付き60 くすぐり70' },
-    { name:'スター・ヴァンパイア', str:'60', con:'55', pow:'60', dex:'65', app:'0', siz:'55', int:'40', edu:'',
-      skills:'回避50 吸血60 隠れる80' },
-    { name:'次元の断層渡り', str:'90', con:'80', pow:'60', dex:'50', app:'15', siz:'90', int:'50', edu:'',
-      skills:'回避35 組み付き65 かみつき55' },
-    { name:'無定形の落とし子', str:'80', con:'80', pow:'50', dex:'35', app:'0', siz:'90', int:'40', edu:'',
-      skills:'回避20 押しつぶす60 組み付き55' },
-  ];
+  // user-authored creature templates, saved from any token via "テンプレ化"
+  // and reusable from any project (unlike tokens themselves, which are
+  // per-project). Stored globally in localStorage, independent of state.
+  const CREATURE_TEMPLATES_KEY = 'scene-map-creature-templates-v1';
+  let creatureTemplates = [];
+
+  function loadCreatureTemplates(){
+    try{
+      const raw = localStorage.getItem(CREATURE_TEMPLATES_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      creatureTemplates = Array.isArray(parsed) ? parsed : [];
+    }catch(e){ creatureTemplates = []; }
+  }
+
+  function saveCreatureTemplates(){
+    localStorage.setItem(CREATURE_TEMPLATES_KEY, JSON.stringify(creatureTemplates));
+  }
+
+  function saveTokenAsTemplate(token){
+    const tpl = { id: uid(), name: token.name, skills: token.skills || '', edition: projectEdition() };
+    TOKEN_CHAR_FIELDS.forEach(([key])=>{ tpl[key] = token[key] || ''; });
+    creatureTemplates.push(tpl);
+    saveCreatureTemplates();
+    setStatus(`「${token.name || '(名称未設定の駒)'}」をテンプレートに保存しました`);
+  }
+
+  function deleteCreatureTemplate(id){
+    creatureTemplates = creatureTemplates.filter(t=>t.id!==id);
+    saveCreatureTemplates();
+  }
 
   function getToken(id){
     return state.tokens.find(t=>t.id===id) || null;
@@ -1289,13 +1302,18 @@
     }, 30);
   }
 
-  function createTokenFromCreature(creature){
+  function createTokenFromTemplate(template){
     pushHistory();
-    const edition = projectEdition();
-    const t = { id: uid(), name: creature.name, skills: creature.skills || '' };
+    const targetEdition = projectEdition();
+    const sourceEdition = template.edition || '7th';
+    const factor = (sourceEdition === targetEdition) ? 1
+      : (sourceEdition === '6th' && targetEdition === '7th') ? 5
+      : (sourceEdition === '7th' && targetEdition === '6th') ? (1/5)
+      : 1;
+    const t = { id: uid(), name: template.name, skills: template.skills || '' };
     TOKEN_CHAR_FIELDS.forEach(([key])=>{
-      const v = parseFloat(creature[key]);
-      t[key] = isNaN(v) ? '' : String(edition === '6th' ? Math.round(v / 5) : v);
+      const v = parseFloat(template[key]);
+      t[key] = isNaN(v) ? '' : String(Math.round(v * factor));
     });
     state.tokens.push(t);
     save();
@@ -1382,6 +1400,7 @@
           <div class="token-skills-label">技能値（自由記述）</div>
           <div class="token-item-skills" data-role="skills" contenteditable="true" spellcheck="false" data-placeholder="回避50 こぶし50 目星25...">${escapeHtml(t.skills||'')}</div>
         </div>
+        <span class="token-item-save-template" data-role="savetemplate" title="他のプロジェクトでも使えるテンプレートとして保存">テンプレ化</span>
         <span class="token-item-copy" data-role="copyccfolia" title="ココフォリア用にコピー">⎘</span>
         <span class="token-item-del" data-role="del" title="削除">×</span>
       </div>
@@ -1451,6 +1470,12 @@
         // call in a page session), so always show a selectable copy dialog instead of
         // silently trusting it
         showCcfoliaCopyModal(json, tok.name);
+      });
+
+      itemEl.querySelector('[data-role="savetemplate"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const tok = getToken(id);
+        if(tok) saveTokenAsTemplate(tok);
       });
 
       itemEl.querySelector('[data-role="draghandle"]').addEventListener('pointerdown', (e)=>{
@@ -1806,60 +1831,72 @@
     setTimeout(()=> document.addEventListener('pointerdown', onPickerOutside, true), 20);
   }
 
-  /* ---- mythos creature picker (search + pick a template for a new token) ---- */
-  let creaturePickerEl = null;
-  function closeCreaturePicker(){
-    if(creaturePickerEl){ creaturePickerEl.remove(); creaturePickerEl = null; }
-    document.removeEventListener('pointerdown', onCreaturePickerOutside, true);
+  /* ---- creature template picker (search + pick a saved template for a new token) ---- */
+  let templatePickerEl = null;
+  function closeTemplatePicker(){
+    if(templatePickerEl){ templatePickerEl.remove(); templatePickerEl = null; }
+    document.removeEventListener('pointerdown', onTemplatePickerOutside, true);
   }
-  function onCreaturePickerOutside(e){
-    if(creaturePickerEl && !creaturePickerEl.contains(e.target)) closeCreaturePicker();
+  function onTemplatePickerOutside(e){
+    if(templatePickerEl && !templatePickerEl.contains(e.target)) closeTemplatePicker();
   }
-  function openCreaturePicker(anchorEl){
-    closeCreaturePicker();
+  function openTemplatePicker(anchorEl){
+    closeTemplatePicker();
     const rect = anchorEl.getBoundingClientRect();
 
-    creaturePickerEl = document.createElement('div');
-    creaturePickerEl.className = 'node-picker';
-    creaturePickerEl.innerHTML = `
-      <input type="text" placeholder="神話生物を検索..." data-role="search" spellcheck="false" />
+    templatePickerEl = document.createElement('div');
+    templatePickerEl.className = 'node-picker';
+    templatePickerEl.innerHTML = `
+      <input type="text" placeholder="テンプレートを検索..." data-role="search" spellcheck="false" />
       <div class="picker-list" data-role="list"></div>
     `;
-    document.body.appendChild(creaturePickerEl);
+    document.body.appendChild(templatePickerEl);
 
     let left = rect.left;
     let top = rect.bottom + 6;
-    const pw = 220, ph = Math.min(280, creaturePickerEl.scrollHeight || 280);
+    const pw = 220, ph = Math.min(280, templatePickerEl.scrollHeight || 280);
     if(left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
     if(top + ph > window.innerHeight - 8) top = rect.top - ph - 6;
     if(top < 8) top = 8;
-    creaturePickerEl.style.left = Math.max(8,left) + 'px';
-    creaturePickerEl.style.top = top + 'px';
+    templatePickerEl.style.left = Math.max(8,left) + 'px';
+    templatePickerEl.style.top = top + 'px';
 
-    const listEl = creaturePickerEl.querySelector('[data-role="list"]');
+    const listEl = templatePickerEl.querySelector('[data-role="list"]');
     function renderList(filter){
       const q = (filter||'').trim().toLowerCase();
-      const filtered = MYTHOS_CREATURES.filter(c => !q || c.name.toLowerCase().includes(q));
+      const filtered = creatureTemplates.filter(c => !q || (c.name||'').toLowerCase().includes(q));
       if(!filtered.length){
-        listEl.innerHTML = `<div class="picker-empty">一致する神話生物がありません</div>`;
+        listEl.innerHTML = `<div class="picker-empty">${creatureTemplates.length ? '一致するテンプレートがありません' : 'まだテンプレートがありません。駒の「テンプレ化」から追加できます。'}</div>`;
         return;
       }
-      listEl.innerHTML = filtered.map(c=>`<div class="picker-item" data-name="${escapeHtml(c.name)}"><span>${escapeHtml(c.name)}</span></div>`).join('');
+      listEl.innerHTML = filtered.map(c=>`
+        <div class="picker-item" data-id="${c.id}">
+          <span>${escapeHtml(c.name || '(無題)')}</span>
+          <span class="picker-item-del" data-role="del" data-id="${c.id}" title="テンプレートを削除">×</span>
+        </div>`).join('');
       listEl.querySelectorAll('.picker-item').forEach(itemEl=>{
-        itemEl.addEventListener('click', ()=>{
-          const creature = MYTHOS_CREATURES.find(c=>c.name === itemEl.dataset.name);
-          closeCreaturePicker();
-          if(creature) createTokenFromCreature(creature);
+        itemEl.addEventListener('click', (e)=>{
+          if(e.target.dataset.role === 'del'){
+            const tpl = creatureTemplates.find(c=>c.id===itemEl.dataset.id);
+            showConfirm(`テンプレート「${tpl && tpl.name ? tpl.name : '(無題)'}」を削除します。よろしいですか？`, ()=>{
+              deleteCreatureTemplate(itemEl.dataset.id);
+              renderList(searchEl.value);
+            });
+            return;
+          }
+          const template = creatureTemplates.find(c=>c.id===itemEl.dataset.id);
+          closeTemplatePicker();
+          if(template) createTokenFromTemplate(template);
         });
       });
     }
     renderList('');
-    const searchEl = creaturePickerEl.querySelector('[data-role="search"]');
+    const searchEl = templatePickerEl.querySelector('[data-role="search"]');
     searchEl.addEventListener('input', ()=> renderList(searchEl.value));
     searchEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
     setTimeout(()=> searchEl.focus(), 20);
 
-    setTimeout(()=> document.addEventListener('pointerdown', onCreaturePickerOutside, true), 20);
+    setTimeout(()=> document.addEventListener('pointerdown', onTemplatePickerOutside, true), 20);
   }
 
   document.getElementById('zoomInBtn').addEventListener('click', ()=> zoomAtCenter(1.2));
