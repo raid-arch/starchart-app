@@ -208,6 +208,11 @@
   }
   .token-item-skills:empty:before{content:attr(data-placeholder);color:#5c5870;}
   .token-item-name:focus, .token-item-skills:focus{color:var(--ink);}
+  .token-item-copy{
+    flex:0 0 auto;width:20px;height:20px;line-height:18px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:14px;border-radius:2px;
+  }
+  .token-item-copy:hover{color:var(--brass);}
   .token-item-del{
     flex:0 0 auto;width:20px;height:20px;line-height:18px;text-align:center;
     color:var(--ink-dim);cursor:pointer;font-size:14px;border-radius:2px;
@@ -546,6 +551,7 @@
     .sticky-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
     .project-item-actions span{ width:28px; height:28px; line-height:26px; font-size:14px; }
     .token-drag-handle{ padding:8px 6px; font-size:16px; }
+    .token-item-copy{ width:28px; height:28px; line-height:26px; font-size:16px; }
     .token-item-del{ width:28px; height:28px; line-height:26px; font-size:16px; }
     .token-stat-field input{ padding:6px 2px; font-size:13px; }
   }
@@ -1182,6 +1188,47 @@
     return parts.join(' / ');
   }
 
+  /* ---- CCFOLIA character import format ----
+     CCFOLIA (ccfolia.com) creates a character token when this JSON shape is
+     pasted onto its room canvas. Best-effort reconstruction of that format --
+     if a newer CCFOLIA expects a slightly different shape, this is the one
+     spot to adjust. */
+  function parseSkillRolls(skillsText){
+    if(!skillsText) return [];
+    return [...skillsText.matchAll(/([^\d\s、,]+)\s*(\d+)/g)].map(m => `CC<=${m[2]} ${m[1]}`);
+  }
+
+  function buildCcfoliaCharacter(t, edition){
+    const d = calcDerivedStats(t, edition);
+    const status = [
+      { label: 'HP', value: d.hp, max: d.hp },
+      { label: 'MP', value: d.mp, max: d.mp },
+      { label: 'SAN', value: d.san, max: d.san },
+    ];
+    const params = [];
+    TOKEN_CHAR_FIELDS.forEach(([key,label])=>{
+      if(t[key]) params.push({ label, value: t[key] });
+    });
+    params.push({ label: 'DB', value: d.db });
+    if(edition === '7th'){
+      params.push({ label: 'ビルド', value: String(d.build) });
+      params.push({ label: 'MOV', value: String(d.mov) });
+    }
+    return {
+      kind: 'character',
+      data: {
+        name: t.name || '(名称未設定の駒)',
+        memo: '',
+        initiative: 0,
+        externalUrl: '',
+        iconUrl: '',
+        status,
+        params,
+        commands: parseSkillRolls(t.skills).join('\n'),
+      },
+    };
+  }
+
   function createToken(){
     pushHistory();
     const t = { id: uid(), name: '', skills: '' };
@@ -1248,6 +1295,7 @@
           <div class="token-skills-label">技能値（自由記述）</div>
           <div class="token-item-skills" data-role="skills" contenteditable="true" spellcheck="false" data-placeholder="回避50 こぶし50 目星25...">${escapeHtml(t.skills||'')}</div>
         </div>
+        <span class="token-item-copy" data-role="copyccfolia" title="ココフォリア用にコピー">⎘</span>
         <span class="token-item-del" data-role="del" title="削除">×</span>
       </div>
     `).join('');
@@ -1304,6 +1352,19 @@
         showConfirm(`「${tok && tok.name ? tok.name : '無名の駒'}」を削除します。連携中のノードは連携解除されます。よろしいですか？`, ()=>{
           deleteToken(id);
         });
+      });
+
+      itemEl.querySelector('[data-role="copyccfolia"]').addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const tok = getToken(id);
+        if(!tok) return;
+        const json = JSON.stringify(buildCcfoliaCharacter(tok, projectEdition()));
+        try{
+          await navigator.clipboard.writeText(json);
+          setStatus('ココフォリア用にコピーしました');
+        }catch(err){
+          setStatus('コピーに失敗しました');
+        }
       });
 
       itemEl.querySelector('[data-role="draghandle"]').addEventListener('pointerdown', (e)=>{
