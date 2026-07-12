@@ -1221,19 +1221,9 @@
       params.push({ label: 'MOV', value: String(d.mov) });
     }
 
-    const commands = ['1d100<={SAN} 【正気度ロール】'];
-    if(edition === '6th'){
-      commands.push('CCB<={INT}*5 【アイデア】');
-      commands.push('CCB<={POW}*5 【幸運】');
-      commands.push('CCB<={EDU}*5 【知識】');
-    }
-    commands.push(...parseSkillRolls(t.skills));
-    TOKEN_CHAR_FIELDS.forEach(([key,label])=>{
-      if(!t[key]) return;
-      const formula = edition === '6th' ? `{${label}}*5` : `{${label}}`;
-      const rollLabel = edition === '6th' ? `${label} × 5` : label;
-      commands.push(`CCB<=${formula} 【${rollLabel}】`);
-    });
+    // only the skills the user actually typed become roll commands -- nothing
+    // is invented on top of what's written on the token
+    const commands = parseSkillRolls(t.skills);
 
     return {
       kind: 'character',
