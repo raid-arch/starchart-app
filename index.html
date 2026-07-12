@@ -30,6 +30,13 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;height:100%;background:var(--void);color:var(--ink);font-family:'Zen Kaku Gothic New',sans-serif;overflow:hidden;}
+  /* long-press/drag should never select page text or show the iOS text-selection
+     callout -- only the actual editable fields (contenteditable/input/textarea)
+     opt back in below */
+  body{ user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  [contenteditable="true"], textarea, input{
+    user-select:text; -webkit-user-select:text; -webkit-touch-callout:default;
+  }
 
   .grid-bg{
     position:absolute;inset:0;pointer-events:none;z-index:0;
@@ -51,12 +58,21 @@
     border-bottom:1px solid var(--line);
     backdrop-filter:blur(4px);
   }
-  .brand{display:flex;align-items:baseline;gap:8px;min-width:0;overflow:hidden;}
+  .brand{display:flex;align-items:center;gap:8px;min-width:0;overflow:visible;position:relative;}
   .brand h1{
     font-family:'Shippori Mincho',serif;font-weight:700;font-size:18px;
     margin:0;letter-spacing:0.08em;color:var(--ink);white-space:nowrap;
   }
-  .brand span{font-size:10.5px;color:var(--ink-dim);letter-spacing:0.08em;white-space:nowrap;}
+
+  .project-switch{
+    display:flex;align-items:center;gap:4px;
+    background:transparent;color:var(--ink-dim);
+    font-size:11px;padding:5px 9px;border-radius:12px;
+    max-width:150px;min-width:0;
+  }
+  .project-switch:hover{border-color:var(--brass);color:var(--brass);}
+  .project-switch-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .project-switch-caret{flex:0 0 auto;font-size:8px;opacity:0.8;}
 
   .header-right{display:flex;gap:8px;align-items:center;flex:1 1 auto;min-width:0;position:relative;justify-content:flex-end;}
   .toolbar-scroll{
@@ -117,6 +133,88 @@
     border-bottom:1px solid var(--line);padding-bottom:6px;
   }
 
+  .project-panel{
+    position:absolute;top:calc(100% + 6px);left:0;z-index:25;
+    width:260px;max-width:calc(100vw - 28px);
+    max-height:0;overflow:hidden;opacity:0;
+    background:var(--panel);border:1px solid var(--line);border-radius:4px;
+    box-shadow:0 14px 34px rgba(0,0,0,0.5);
+    transition:max-height 0.22s ease, opacity 0.18s ease;
+    pointer-events:none;
+  }
+  .project-panel.open{max-height:70vh;opacity:1;overflow-y:auto;pointer-events:auto;}
+  .project-panel-inner{padding:10px;}
+  .project-list{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+  .project-item{
+    display:flex;align-items:center;gap:6px;padding:8px 9px;border-radius:3px;
+    border:1px solid transparent;cursor:pointer;
+  }
+  .project-item:hover{background:var(--panel-2);}
+  .project-item.active{border-color:var(--brass-dim);background:var(--panel-2);}
+  .project-item-main{flex:1;min-width:0;}
+  .project-item-name{
+    font-size:12.5px;color:var(--ink);outline:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .project-item-name[contenteditable="true"]{white-space:normal;overflow:visible;color:var(--brass);}
+  .project-item.active .project-item-name{color:var(--brass);}
+  .project-item-meta{font-size:10px;color:var(--ink-dim);margin-top:2px;}
+  .project-item-actions{display:flex;gap:2px;flex:0 0 auto;}
+  .project-item-actions span{
+    width:22px;height:22px;line-height:20px;text-align:center;border-radius:2px;
+    color:var(--ink-dim);font-size:12px;cursor:pointer;
+  }
+  .project-item-actions span:hover{color:var(--brass);}
+  .project-item-actions .del:hover{color:var(--blood);}
+
+  .edition-tabs{display:flex;gap:6px;}
+  .edition-tabs button{flex:1;}
+  .edition-tabs button.active{background:var(--brass-dim);border-color:var(--brass);color:var(--ink);}
+
+  .token-list{display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow-y:auto;}
+  .token-list-empty{font-size:12px;color:var(--ink-dim);padding:10px 2px;line-height:1.6;}
+  .token-item{
+    display:flex;align-items:flex-start;gap:6px;padding:8px;border-radius:3px;
+    background:var(--panel-2);border:1px solid var(--line);
+  }
+  .token-drag-handle{
+    flex:0 0 auto;cursor:grab;color:var(--ink-dim);font-size:13px;line-height:1;
+    padding:3px 2px;touch-action:none;
+  }
+  .token-drag-handle:hover{color:var(--brass);}
+  .token-item-main{flex:1;min-width:0;}
+  .token-item-name{
+    font-size:12.5px;font-weight:700;color:var(--ink);outline:none;margin-bottom:4px;
+  }
+  .token-item-name:empty:before{content:'駒の名前';color:var(--ink-dim);font-weight:400;}
+
+  .token-stat-grid{display:grid;grid-template-columns:repeat(4, 1fr);gap:4px 6px;margin:6px 0;}
+  .token-stat-field{display:flex;flex-direction:column;gap:2px;}
+  .token-stat-field label{font-size:9px;color:var(--ink-dim);letter-spacing:0.03em;text-align:center;}
+  .token-stat-field input{
+    width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line);border-radius:2px;
+    color:var(--ink);font-size:11.5px;padding:3px 2px;text-align:center;font-family:monospace;
+  }
+  .token-stat-field input:focus{border-color:var(--brass);outline:none;}
+  .token-skills-label{font-size:9.5px;color:var(--ink-dim);letter-spacing:0.04em;margin:2px 0 3px;}
+  .token-item-skills{
+    font-family:monospace;font-size:11px;line-height:1.5;color:var(--ink-dim);
+    outline:none;white-space:pre-wrap;overflow-wrap:break-word;min-height:16px;
+  }
+  .token-item-skills:empty:before{content:attr(data-placeholder);color:#5c5870;}
+  .token-item-name:focus, .token-item-skills:focus{color:var(--ink);}
+  .token-item-del{
+    flex:0 0 auto;width:20px;height:20px;line-height:18px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:14px;border-radius:2px;
+  }
+  .token-item-del:hover{color:var(--blood);}
+
+  .token-ghost{
+    position:fixed;z-index:200;transform:translate(-50%,-140%);
+    background:var(--panel);border:1px solid var(--brass);border-radius:4px;
+    padding:6px 12px;font-size:12px;color:var(--ink);pointer-events:none;
+    box-shadow:0 10px 24px rgba(0,0,0,0.5);white-space:nowrap;
+  }
+
   .legend{display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--ink-dim);}
   .legend .row{display:flex;align-items:center;gap:8px;}
   .legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
@@ -162,6 +260,7 @@
   }
   .node.dragging{box-shadow:0 12px 30px rgba(0,0,0,0.6);z-index:10;}
   .node.selected{outline:2px solid var(--brass);outline-offset:2px;box-shadow:0 0 0 4px rgba(184,148,79,0.18), 0 6px 18px rgba(0,0,0,0.45);}
+  .node.token-drop-hover{outline:2px dashed var(--brass);outline-offset:3px;}
   .node.type-choice{border-left-style:dashed;border-left-width:4px;}
   .node.type-ending{border-left-width:4px;}
 
@@ -187,6 +286,11 @@
     min-width:0;overflow-wrap:break-word;
   }
   .node-title:empty:before{content:'シーン名';color:var(--ink-dim);}
+  .node-rename{
+    flex:0 0 auto;width:18px;height:18px;line-height:16px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;
+  }
+  .node-rename:hover{color:var(--brass);}
   .node-dup{
     flex:0 0 auto;width:18px;height:18px;line-height:16px;text-align:center;
     color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;
@@ -211,6 +315,23 @@
     transition:color 0.1s;
   }
   .star-row .star.filled{color:var(--brass);}
+
+  .enemy-stats{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .enemy-stats-label{font-size:10px;color:var(--blood);letter-spacing:0.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .enemy-stats.linked .enemy-stats-label{color:var(--brass);}
+  .enemy-stats.linked{cursor:pointer;}
+  .token-unlink{font-size:9.5px;color:var(--ink-dim);cursor:pointer;text-decoration:underline;white-space:nowrap;}
+  .token-unlink:hover{color:var(--blood);}
+  .enemy-stats-text{
+    font-family:monospace;font-size:11.5px;line-height:1.6;color:var(--ink-dim);
+    outline:none;min-height:20px;white-space:pre-wrap;overflow-wrap:break-word;
+  }
+  .enemy-stats-text:empty:before{
+    content: attr(data-placeholder);
+    color:#5c5870;
+  }
+  .enemy-stats-text:focus{color:var(--ink);}
+  .enemy-stats-text.readonly{cursor:default;}
 
   .link-row{
     display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
@@ -342,7 +463,7 @@
     box-shadow:0 20px 60px rgba(0,0,0,0.5);padding:18px;
   }
   .modal-box p{margin:0 0 16px;font-size:13px;line-height:1.7;color:var(--ink);}
-  .modal-actions{display:flex;gap:8px;justify-content:flex-end;}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
   .modal-actions button.confirm{background:var(--blood);border-color:var(--blood);color:var(--ink);}
   .modal-actions button.confirm:hover{background:#a53a2a;}
   .modal-box.wide{width:min(520px,94vw);}
@@ -352,6 +473,10 @@
     font-family:monospace;font-size:11.5px;padding:8px;margin-bottom:10px;
   }
   .modal-box .hint{font-size:11px;color:var(--ink-dim);margin:-8px 0 10px;line-height:1.6;}
+  .modal-box input[type="file"]{
+    width:100%;box-sizing:border-box;font-size:11.5px;color:var(--ink-dim);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:8px;
+  }
 
   /* sticky notes */
   .sticky{
@@ -384,15 +509,39 @@
     :root{ --node-w:180px; }
     header{padding:8px 10px;}
     .brand h1{font-size:16px;}
-    .brand span{display:none;}
+    .project-switch{max-width:96px;font-size:10px;padding:4px 7px;}
     button{padding:8px 10px;font-size:12.5px;}
     .node-text{font-size:12px;}
+    .enemy-stats-text{font-size:11px;}
     .details-panel{right:8px;left:8px;width:auto;max-width:none;}
     .minimap{width:120px;height:86px;left:8px;bottom:8px;}
     .zoom-controls{right:8px;bottom:8px;}
   }
   @media (max-width: 380px){
-    :root{ --node-w:158px; }
+    :root{ --node-w:190px; }
+  }
+
+  /* touch devices: the compact node controls are sized for a mouse cursor;
+     enlarge their tap targets so fingers can hit them reliably */
+  @media (pointer: coarse){
+    .node-head{ gap:5px; }
+    .type-dot{ width:18px; height:18px; }
+    .node-rename{ width:24px; height:24px; line-height:22px; font-size:13px; }
+    .node-dup{ width:24px; height:24px; line-height:22px; font-size:13px; }
+    .node-del{ width:24px; height:24px; line-height:22px; font-size:15px; }
+    .connect-handle{ width:30px; height:30px; right:-13px; }
+    .star-row{ gap:2px; }
+    .star-row .star{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:24px; height:24px; font-size:16px;
+    }
+    .link-clear{ width:22px; height:22px; line-height:20px; font-size:12.5px; }
+    .link-label{ padding:5px 11px; font-size:11.5px; }
+    .sticky-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
+    .project-item-actions span{ width:28px; height:28px; line-height:26px; font-size:14px; }
+    .token-drag-handle{ padding:8px 6px; font-size:16px; }
+    .token-item-del{ width:28px; height:28px; line-height:26px; font-size:16px; }
+    .token-stat-field input{ padding:6px 2px; font-size:13px; }
   }
 </style>
 </head>
@@ -400,12 +549,34 @@
 <header>
   <div class="brand">
     <h1>星図</h1>
-    <span>SCENE THREAD — シーン意見出し</span>
+    <button class="project-switch" id="projectBtn" title="プロジェクトを切替・作成">
+      <span class="project-switch-name" id="projectLabel">—</span>
+      <span class="project-switch-caret">▾</span>
+    </button>
+    <div class="project-panel" id="projectPanel">
+      <div class="project-panel-inner">
+        <div class="project-list" id="projectList"></div>
+        <button class="fullwidth primary" id="newProjectBtn">＋ 新規プロジェクト</button>
+      </div>
+    </div>
   </div>
   <div class="header-right">
     <div class="toolbar-scroll" id="toolbarScroll">
       <button class="primary" id="addBtn">＋ シーン</button>
       <button id="addNoteBtn">＋ 付箋</button>
+    </div>
+    <button class="details-toggle" id="tokensBtn" title="駒（NPC/モンスター）を作成・管理">
+      🧑 駒
+    </button>
+    <div class="details-panel" id="tokensPanel">
+      <div class="details-inner">
+        <div class="details-section">
+          <h3>駒（キャラクター/NPC・モンスター）</h3>
+          <div class="token-list" id="tokenList"></div>
+          <button class="fullwidth primary" id="newTokenBtn" style="margin-top:8px;">＋ 新規の駒</button>
+          <div class="hint" style="margin-top:8px;">左の⠿⠿をドラッグして戦闘シーンのノードにドロップすると連携します（連携後は駒を編集すると連携中の全ノードに反映されます）。</div>
+        </div>
+      </div>
     </div>
     <button class="details-toggle" id="detailsBtn">
       詳細 <span class="dot-indicator" id="statusDot"></span>
@@ -413,15 +584,29 @@
     <div class="details-panel" id="detailsPanel">
       <div class="details-inner">
         <div class="details-section">
+          <h3>ルール版（このプロジェクト）</h3>
+          <div class="edition-tabs" id="editionTabs">
+            <button data-edition="6th">6版</button>
+            <button data-edition="7th">7版</button>
+          </div>
+        </div>
+        <div class="details-section">
           <h3>シーン種別（左端の色点で切替）</h3>
           <div class="legend" id="legend"></div>
         </div>
         <div class="details-section">
-          <h3>整理・データ</h3>
+          <h3>整理・データ（このプロジェクト）</h3>
           <button class="fullwidth" id="layoutBtn" style="margin-bottom:8px;">🧭 接続にそって整列</button>
           <div style="display:flex;gap:8px;">
             <button id="exportBtn" style="flex:1;">書き出し</button>
             <button id="importBtn" style="flex:1;">読み込み</button>
+          </div>
+        </div>
+        <div class="details-section">
+          <h3>スマホ⇔PC 共有（全プロジェクト）</h3>
+          <div style="display:flex;gap:8px;">
+            <button id="exportAllBtn" style="flex:1;">全て書き出し</button>
+            <button id="importAllBtn" style="flex:1;">全て読み込み</button>
           </div>
         </div>
         <div class="details-section">
@@ -487,10 +672,19 @@
     {key:'ending', label:'エンディング', color:'#c9a24a'},
     {key:'other', label:'その他', color:'#6b6580'},
   ];
-  const STORE_KEY = 'scene-thread-graph-v3';
+  const ENEMY_PLACEHOLDER = {
+    '7th': 'キャラの駒をドロップ(7版)',
+    '6th': 'キャラの駒をドロップ(6版)',
+  };
+  const PROJECTS_KEY = 'scene-map-projects-v1';
+  const ACTIVE_PROJECT_KEY = 'scene-map-active-project-v1';
+  const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
+  const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
-  let state = { nodes: [], links: [], notes: [] };
+  let projects = [];        // [{id, name, updatedAt}]
+  let activeProjectId = null;
+  let state = { nodes: [], links: [], notes: [], tokens: [] };
   let history = [];        // undo stack (state snapshots)
   let future = [];         // redo stack
   let dragging = null;      // {id, grabDX, grabDY}
@@ -541,6 +735,9 @@
   const statusDot = document.getElementById('statusDot');
   const detailsBtn = document.getElementById('detailsBtn');
   const detailsPanel = document.getElementById('detailsPanel');
+  const projectBtn = document.getElementById('projectBtn');
+  const projectPanel = document.getElementById('projectPanel');
+  const projectLabel = document.getElementById('projectLabel');
   const zoomPct = document.getElementById('zoomPct');
   const minimap = document.getElementById('minimap');
 
@@ -573,24 +770,269 @@
     }
   });
 
+  /* ---- project panel toggle ---- */
+  function closeProjectPanel(){ projectPanel.classList.remove('open'); }
+  projectBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(!projectPanel.classList.contains('open')) renderProjectList();
+    projectPanel.classList.toggle('open');
+  });
+  document.addEventListener('click', (e)=>{
+    if(projectPanel.classList.contains('open') && !projectPanel.contains(e.target) && !projectBtn.contains(e.target)){
+      closeProjectPanel();
+    }
+  });
+  document.getElementById('newProjectBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    createProject();
+  });
+
+  /* ---- rule edition tabs (6th/7th, per project) ---- */
+  document.querySelectorAll('#editionTabs button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const p = currentProject();
+      if(!p || p.edition === b.dataset.edition) return;
+      p.edition = b.dataset.edition;
+      saveProjectsList();
+      updateEditionTabs();
+      render();
+      renderTokenList();
+    });
+  });
+
+  /* ---- tokens (駒) panel toggle ---- */
+  const tokensBtn = document.getElementById('tokensBtn');
+  const tokensPanel = document.getElementById('tokensPanel');
+  function closeTokensPanel(){ tokensPanel.classList.remove('open'); }
+  tokensBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(!tokensPanel.classList.contains('open')) renderTokenList();
+    tokensPanel.classList.toggle('open');
+  });
+  document.addEventListener('click', (e)=>{
+    if(tokensPanel.classList.contains('open') && !tokensPanel.contains(e.target) && !tokensBtn.contains(e.target)){
+      closeTokensPanel();
+    }
+  });
+  document.getElementById('newTokenBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    createToken();
+  });
+
   /* ---- responsive node width kept in sync with CSS ---- */
   function nodeWidth(){
     const w = window.innerWidth;
-    if(w <= 380) return 158;
+    if(w <= 380) return 190;
     if(w <= 640) return 180;
     return 230;
   }
 
-  function load(){
+  /* ---- multi-project storage ----
+     each project's graph lives under its own localStorage key
+     (GRAPH_KEY_PREFIX + id); PROJECTS_KEY holds the {id,name,updatedAt}
+     list, ACTIVE_PROJECT_KEY remembers which one was open last. */
+  function graphKey(id){ return GRAPH_KEY_PREFIX + id; }
+
+  function loadGraphFor(id){
     try{
-      const raw = localStorage.getItem(STORE_KEY);
+      const raw = localStorage.getItem(graphKey(id));
       if(raw){
         const parsed = JSON.parse(raw);
-        if(parsed && Array.isArray(parsed.nodes)) state = parsed;
-        if(!Array.isArray(state.notes)) state.notes = [];
+        if(parsed && Array.isArray(parsed.nodes)){
+          if(!Array.isArray(parsed.links)) parsed.links = [];
+          if(!Array.isArray(parsed.notes)) parsed.notes = [];
+          if(!Array.isArray(parsed.tokens)) parsed.tokens = [];
+          return parsed;
+        }
       }
-    }catch(e){ /* no existing data */ }
+    }catch(e){ /* fall through to empty graph */ }
+    return { nodes: [], links: [], notes: [] , tokens: [] };
+  }
+
+  function saveProjectsList(){
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  }
+
+  function initProjects(){
+    try{
+      const raw = localStorage.getItem(PROJECTS_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if(Array.isArray(parsed) && parsed.length){
+        projects = parsed;
+        const savedActive = localStorage.getItem(ACTIVE_PROJECT_KEY);
+        activeProjectId = (savedActive && projects.some(p=>p.id===savedActive)) ? savedActive : projects[0].id;
+        return;
+      }
+    }catch(e){ /* fall through to migration/fresh start */ }
+
+    // first run: migrate the pre-multi-project single save (if any) into project #1
+    const id = uid();
+    let graph = { nodes: [], links: [], notes: [] };
+    try{
+      const legacyRaw = localStorage.getItem(LEGACY_STORE_KEY);
+      if(legacyRaw){
+        const parsed = JSON.parse(legacyRaw);
+        if(parsed && Array.isArray(parsed.nodes)) graph = parsed;
+      }
+    }catch(e){ /* ignore corrupt legacy data */ }
+    projects = [{ id, name: 'シナリオ1', updatedAt: Date.now(), edition: '7th' }];
+    localStorage.setItem(graphKey(id), JSON.stringify(graph));
+    localStorage.removeItem(LEGACY_STORE_KEY);
+    saveProjectsList();
+    activeProjectId = id;
+    localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+  }
+
+  function currentProject(){
+    return projects.find(p=>p.id===activeProjectId) || null;
+  }
+
+  function updateProjectLabel(){
+    const p = currentProject();
+    projectLabel.textContent = p ? p.name : '—';
+  }
+
+  function projectEdition(){
+    const p = currentProject();
+    return (p && p.edition) || '7th';
+  }
+
+  function updateEditionTabs(){
+    const edition = projectEdition();
+    document.querySelectorAll('#editionTabs button').forEach(b=>{
+      b.classList.toggle('active', b.dataset.edition === edition);
+    });
+  }
+
+  function switchProject(id){
+    if(id === activeProjectId) return;
+    activeProjectId = id;
+    localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+    state = loadGraphFor(id);
+    history = [];
+    future = [];
+    selectedIds.clear();
+    closeNodePicker();
+    updateProjectLabel();
+    updateEditionTabs();
     render();
+    renderTokenList();
+    fitView();
+    closeProjectPanel();
+  }
+
+  function createProject(){
+    const id = uid();
+    const name = 'シナリオ' + (projects.length + 1);
+    projects.push({ id, name, updatedAt: Date.now(), edition: '7th' });
+    localStorage.setItem(graphKey(id), JSON.stringify({ nodes: [], links: [], notes: [], tokens: [] }));
+    saveProjectsList();
+    switchProject(id);
+    renderProjectList();
+  }
+
+  function duplicateProject(id){
+    const src = projects.find(p=>p.id===id);
+    if(!src) return;
+    const graph = (id === activeProjectId) ? state : loadGraphFor(id);
+    const newId = uid();
+    projects.push({ id: newId, name: src.name + 'のコピー', updatedAt: Date.now(), edition: src.edition || '7th' });
+    localStorage.setItem(graphKey(newId), JSON.stringify(graph));
+    saveProjectsList();
+    renderProjectList();
+  }
+
+  function renameProject(id, name){
+    const p = projects.find(x=>x.id===id);
+    if(!p) return;
+    const val = (name||'').trim();
+    if(val) p.name = val;
+    saveProjectsList();
+    updateProjectLabel();
+    renderProjectList();
+  }
+
+  function deleteProject(id){
+    if(projects.length <= 1) return; // always keep at least one project
+    projects = projects.filter(p=>p.id!==id);
+    localStorage.removeItem(graphKey(id));
+    saveProjectsList();
+    if(id === activeProjectId){
+      switchProject(projects[0].id);
+    }else{
+      renderProjectList();
+    }
+  }
+
+  function formatUpdatedAt(ts){
+    if(!ts) return '';
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function renderProjectList(){
+    const listEl = document.getElementById('projectList');
+    const sorted = [...projects].sort((a,b)=> (b.updatedAt||0) - (a.updatedAt||0));
+    listEl.innerHTML = sorted.map(p => `
+      <div class="project-item${p.id===activeProjectId ? ' active' : ''}" data-id="${p.id}">
+        <div class="project-item-main">
+          <div class="project-item-name" data-role="name" spellcheck="false">${escapeHtml(p.name)}</div>
+          <div class="project-item-meta">${formatUpdatedAt(p.updatedAt)}</div>
+        </div>
+        <div class="project-item-actions">
+          <span data-role="dup" title="複製">⧉</span>
+          <span data-role="rename" title="名前変更">✎</span>
+          ${projects.length > 1 ? '<span data-role="del" class="del" title="削除">×</span>' : ''}
+        </div>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.project-item').forEach(itemEl=>{
+      const id = itemEl.getAttribute('data-id');
+      const nameEl = itemEl.querySelector('[data-role="name"]');
+
+      itemEl.addEventListener('click', (e)=>{
+        if(e.target.closest('[data-role]') && e.target !== nameEl) return;
+        if(nameEl.contentEditable === 'true') return;
+        switchProject(id);
+      });
+      itemEl.querySelector('[data-role="dup"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        duplicateProject(id);
+      });
+      itemEl.querySelector('[data-role="rename"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        nameEl.contentEditable = 'true';
+        nameEl.focus();
+        document.execCommand('selectAll', false, null);
+      });
+      nameEl.addEventListener('pointerdown', (e)=>{ if(nameEl.contentEditable==='true') e.stopPropagation(); });
+      nameEl.addEventListener('blur', ()=>{
+        nameEl.contentEditable = 'false';
+        renameProject(id, nameEl.textContent);
+      });
+      nameEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); nameEl.blur(); } });
+      const delEl = itemEl.querySelector('[data-role="del"]');
+      if(delEl){
+        delEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          const proj = projects.find(p=>p.id===id);
+          showConfirm(`「${proj ? proj.name : 'このプロジェクト'}」を削除します。中のシーン・付箋もすべて削除されます。よろしいですか？`, ()=>{
+            deleteProject(id);
+          });
+        });
+      }
+    });
+  }
+
+  function load(){
+    initProjects();
+    state = loadGraphFor(activeProjectId);
+    updateProjectLabel();
+    updateEditionTabs();
+    render();
+    renderTokenList();
     applyViewport();
   }
 
@@ -599,7 +1041,9 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(()=>{
       try{
-        localStorage.setItem(STORE_KEY, JSON.stringify(state));
+        localStorage.setItem(graphKey(activeProjectId), JSON.stringify(state));
+        const p = currentProject();
+        if(p){ p.updatedAt = Date.now(); saveProjectsList(); }
         setStatus('保存済み');
       }catch(e){ setStatus('保存に失敗'); }
     }, 300);
@@ -617,6 +1061,7 @@
     selectedIds.clear();
     closeNodePicker();
     render();
+    renderTokenList();
     save();
     applyViewport();
   }
@@ -627,34 +1072,216 @@
     selectedIds.clear();
     closeNodePicker();
     render();
+    renderTokenList();
     save();
     applyViewport();
+  }
+
+  /* ---- character tokens (per-project roster) ----
+     a token holds reusable NPC/monster stats; linking one to a battle-type
+     node keeps that node's enemy-stats display in sync with the token, so
+     editing the token updates every scene that uses it. */
+  const TOKEN_CHAR_FIELDS = [['str','STR'],['con','CON'],['pow','POW'],['dex','DEX'],['app','APP'],['siz','SIZ'],['int','INT'],['edu','EDU']];
+  const TOKEN_DERIVED_FIELDS_7TH = [['hp','HP'],['mp','MP'],['san','SAN'],['db','DB'],['build','ビルド'],['mov','MOV']];
+  const TOKEN_DERIVED_FIELDS_6TH = [['hp','HP'],['mp','MP'],['san','SAN'],['db','DB'],['mov','MOV']];
+  function tokenDerivedFields(edition){ return edition === '6th' ? TOKEN_DERIVED_FIELDS_6TH : TOKEN_DERIVED_FIELDS_7TH; }
+
+  function getToken(id){
+    return state.tokens.find(t=>t.id===id) || null;
+  }
+
+  function formatTokenStats(t, edition){
+    if(!t) return '';
+    const charStr = TOKEN_CHAR_FIELDS.map(([k,label])=> t[k] ? label+t[k] : null).filter(Boolean).join(' ');
+    const derivedStr = tokenDerivedFields(edition).map(([k,label])=> t[k] ? label+t[k] : null).filter(Boolean).join(' ');
+    const parts = [];
+    if(charStr) parts.push(charStr);
+    if(derivedStr) parts.push(derivedStr);
+    if(t.skills) parts.push('技能: ' + t.skills);
+    return parts.join(' / ');
+  }
+
+  function createToken(){
+    pushHistory();
+    const t = { id: uid(), name: '', skills: '' };
+    TOKEN_CHAR_FIELDS.concat(TOKEN_DERIVED_FIELDS_7TH).forEach(([k])=>{ t[k] = ''; });
+    state.tokens.push(t);
+    save();
+    renderTokenList();
+    setTimeout(()=>{
+      const el = document.querySelector(`[data-token-item-id="${t.id}"] [data-role="name"]`);
+      if(el) el.focus();
+    }, 30);
+  }
+
+  function deleteToken(id){
+    pushHistory();
+    state.tokens = state.tokens.filter(t=>t.id!==id);
+    state.nodes.forEach(n=>{ if(n.tokenId === id) n.tokenId = null; });
+    render();
+    save();
+    renderTokenList();
+  }
+
+  function linkTokenToNode(tokenId, nodeId){
+    const n = state.nodes.find(x=>x.id===nodeId);
+    if(!n || n.type !== 'battle') return;
+    if(n.tokenId === tokenId) return;
+    pushHistory();
+    n.tokenId = tokenId;
+    render();
+    save();
+  }
+
+  function unlinkTokenFromNode(nodeId){
+    const n = state.nodes.find(x=>x.id===nodeId);
+    if(!n || !n.tokenId) return;
+    pushHistory();
+    n.tokenId = null;
+    render();
+    save();
+  }
+
+  function renderTokenList(){
+    const listEl = document.getElementById('tokenList');
+    if(!listEl) return;
+    if(!state.tokens.length){
+      listEl.innerHTML = '<div class="token-list-empty">まだ駒がありません。「＋ 新規の駒」で作成できます。</div>';
+      return;
+    }
+    const edition = projectEdition();
+    const charInputsHtml = t => TOKEN_CHAR_FIELDS.map(([key,label]) => `
+      <div class="token-stat-field">
+        <label>${label}</label>
+        <input type="text" inputmode="numeric" data-stat="${key}" value="${escapeHtml(t[key]||'')}" />
+      </div>`).join('');
+    const derivedInputsHtml = t => tokenDerivedFields(edition).map(([key,label]) => `
+      <div class="token-stat-field">
+        <label>${label}</label>
+        <input type="text" data-stat="${key}" value="${escapeHtml(t[key]||'')}" />
+      </div>`).join('');
+
+    listEl.innerHTML = state.tokens.map(t => `
+      <div class="token-item" data-token-item-id="${t.id}">
+        <div class="token-drag-handle" data-role="draghandle" title="ドラッグして戦闘ノードへドロップ">⠿⠿</div>
+        <div class="token-item-main">
+          <div class="token-item-name" data-role="name" contenteditable="true" spellcheck="false">${escapeHtml(t.name)}</div>
+          <div class="token-stat-grid">${charInputsHtml(t)}</div>
+          <div class="token-stat-grid">${derivedInputsHtml(t)}</div>
+          <div class="token-skills-label">技能値（自由記述）</div>
+          <div class="token-item-skills" data-role="skills" contenteditable="true" spellcheck="false" data-placeholder="回避50 こぶし50 目星25...">${escapeHtml(t.skills||'')}</div>
+        </div>
+        <span class="token-item-del" data-role="del" title="削除">×</span>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.token-item').forEach(itemEl=>{
+      const id = itemEl.getAttribute('data-token-item-id');
+      const nameEl = itemEl.querySelector('[data-role="name"]');
+      const skillsEl = itemEl.querySelector('[data-role="skills"]');
+
+      nameEl.addEventListener('focus', ()=>{ nameEl.dataset.before = nameEl.textContent; });
+      nameEl.addEventListener('blur', ()=>{
+        const val = nameEl.textContent.trim();
+        const tok = getToken(id);
+        if(tok){
+          if(val !== nameEl.dataset.before) pushHistory();
+          tok.name = val; save(); render();
+        }
+      });
+      nameEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); nameEl.blur(); } });
+
+      itemEl.querySelectorAll('input[data-stat]').forEach(inputEl=>{
+        inputEl.addEventListener('focus', ()=>{ inputEl.dataset.before = inputEl.value; });
+        inputEl.addEventListener('blur', ()=>{
+          const key = inputEl.dataset.stat;
+          const val = inputEl.value.trim();
+          const tok = getToken(id);
+          if(tok){
+            if(val !== inputEl.dataset.before) pushHistory();
+            tok[key] = val; save(); render();
+          }
+        });
+        inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); inputEl.blur(); } });
+        inputEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+      });
+
+      skillsEl.addEventListener('focus', ()=>{ skillsEl.dataset.before = skillsEl.textContent; });
+      skillsEl.addEventListener('blur', ()=>{
+        const val = skillsEl.textContent.trim();
+        const tok = getToken(id);
+        if(tok){
+          if(val !== skillsEl.dataset.before) pushHistory();
+          tok.skills = val; save(); render(); applyViewport();
+        }
+      });
+
+      itemEl.querySelector('[data-role="del"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const tok = getToken(id);
+        showConfirm(`「${tok && tok.name ? tok.name : '無名の駒'}」を削除します。連携中のノードは連携解除されます。よろしいですか？`, ()=>{
+          deleteToken(id);
+        });
+      });
+
+      itemEl.querySelector('[data-role="draghandle"]').addEventListener('pointerdown', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        startTokenDrag(id, e.clientX, e.clientY);
+      });
+    });
+  }
+
+  let tokenDragging = null; // {tokenId, ghostEl}
+  function startTokenDrag(tokenId, clientX, clientY){
+    const tok = getToken(tokenId);
+    if(!tok) return;
+    closeTokensPanel();
+    const ghost = document.createElement('div');
+    ghost.className = 'token-ghost';
+    ghost.textContent = '🧑 ' + (tok.name || '(名称未設定)');
+    document.body.appendChild(ghost);
+    ghost.style.left = clientX + 'px';
+    ghost.style.top = clientY + 'px';
+    tokenDragging = { tokenId, ghostEl: ghost };
+  }
+  function updateTokenDrag(clientX, clientY){
+    if(!tokenDragging) return;
+    tokenDragging.ghostEl.style.left = clientX + 'px';
+    tokenDragging.ghostEl.style.top = clientY + 'px';
+    const under = document.elementFromPoint(clientX, clientY);
+    const nodeEl = under ? under.closest('.node.type-battle') : null;
+    canvas.querySelectorAll('.node.token-drop-hover').forEach(el=>{
+      if(el !== nodeEl) el.classList.remove('token-drop-hover');
+    });
+    if(nodeEl) nodeEl.classList.add('token-drop-hover');
+  }
+  function endTokenDrag(clientX, clientY){
+    if(!tokenDragging) return;
+    const under = document.elementFromPoint(clientX, clientY);
+    const nodeEl = under ? under.closest('.node.type-battle') : null;
+    if(nodeEl){
+      linkTokenToNode(tokenDragging.tokenId, nodeEl.getAttribute('data-node-id'));
+    }
+    canvas.querySelectorAll('.node.token-drop-hover').forEach(el=> el.classList.remove('token-drop-hover'));
+    tokenDragging.ghostEl.remove();
+    tokenDragging = null;
   }
 
   function addNode(x, y, type){
     const t = type || 'other';
     let px = x, py = y;
     if(px == null || py == null){
+      // always the center of the current view, regardless of device/screen size;
+      // add several in a row and drag them apart, or use "接続にそって整列"
       const rect = canvasWrap.getBoundingClientRect();
       const w = nodeWidth();
-      const cx = (rect.width/2 - viewport.offsetX) / viewport.scale - w/2;
-      const cy = (rect.height/2 - viewport.offsetY) / viewport.scale - 47;
-      // fan sequential adds out in a grid so they don't stack directly on top of each other;
-      // column count adapts to the actual visible width so later nodes never spawn off-screen
-      const colW = w + 40, rowH = 170;
-      const visibleCols = Math.max(1, Math.floor((rect.width/viewport.scale - 40) / colW));
-      const cols = Math.min(3, visibleCols);
-      const idx = state.nodes.length;
-      const col = idx % cols, row = Math.floor(idx / cols);
-      const gridSpan = (cols - 1) * colW;
-      const fanX = col * colW - gridSpan / 2;
-      const fanY = row * rowH;
-      px = cx + fanX + (Math.random()*16-8);
-      py = cy + fanY + (Math.random()*16-8);
+      px = (rect.width/2 - viewport.offsetX) / viewport.scale - w/2;
+      py = (rect.height/2 - viewport.offsetY) / viewport.scale - 47;
     }
     const n = {
       id: uid(), x: px, y: py, title: '', text: '',
-      type: t, stars: t === 'ending' ? 3 : 0, linkTo: null,
+      type: t, stars: t === 'ending' ? 3 : 0, linkTo: null, enemyStats: '', tokenId: null,
     };
     pushHistory();
     state.nodes.push(n);
@@ -780,8 +1407,10 @@
     const headH = 34;
     const bodyH = Math.max(40, 20 + Math.ceil((n.text||'').length/22)*16);
     const starH = n.type === 'ending' ? 26 : 0;
+    const enemyStatsLen = (n.type === 'battle' && n.tokenId) ? formatTokenStats(getToken(n.tokenId), projectEdition()).length : (n.enemyStats||'').length;
+    const enemyH = n.type === 'battle' ? (30 + Math.ceil(enemyStatsLen/22)*15) : 0;
     const linkH = 26;
-    const h = headH + bodyH + starH + linkH;
+    const h = headH + bodyH + starH + enemyH + linkH;
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
     return { x: n.x + w/2, y: n.y + h/2 };
@@ -801,10 +1430,17 @@
   /* ---- viewport (pan/zoom) ---- */
   function applyViewport(){
     canvas.style.transform = `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.scale})`;
-    gridBg.style.backgroundPosition =
-      `${viewport.offsetX}px ${viewport.offsetY}px, ${viewport.offsetX}px ${viewport.offsetY}px, ${viewport.offsetX}px ${viewport.offsetY}px, ${viewport.offsetX}px ${viewport.offsetY}px`;
     const s = viewport.scale;
-    gridBg.style.backgroundSize = `${250*s}px ${250*s}px, ${250*s}px ${250*s}px, ${50*s}px ${50*s}px, ${50*s}px ${50*s}px`;
+    const majorSize = 250*s, minorSize = 50*s;
+    // wrap into [0, tileSize) rather than passing the raw pan offset straight through --
+    // some mobile GPUs lose precision on background-position once it's panned far from
+    // the origin, which made the grid fade out or vanish entirely
+    const wrap = (v, size) => ((v % size) + size) % size;
+    const majorX = wrap(viewport.offsetX, majorSize), majorY = wrap(viewport.offsetY, majorSize);
+    const minorX = wrap(viewport.offsetX, minorSize), minorY = wrap(viewport.offsetY, minorSize);
+    gridBg.style.backgroundPosition =
+      `${majorX}px ${majorY}px, ${majorX}px ${majorY}px, ${minorX}px ${minorY}px, ${minorX}px ${minorY}px`;
+    gridBg.style.backgroundSize = `${majorSize}px ${majorSize}px, ${majorSize}px ${majorSize}px, ${minorSize}px ${minorSize}px, ${minorSize}px ${minorSize}px`;
     zoomPct.textContent = Math.round(viewport.scale*100) + '%';
     drawMinimap();
   }
@@ -1061,6 +1697,17 @@
           ${[1,2,3,4,5].map(s=>`<span class="star${s<=(n.stars||0)?' filled':''}" data-role="star" data-val="${s}">★</span>`).join('')}
         </div>` : '';
 
+      const linkedToken = (n.type === 'battle' && n.tokenId) ? getToken(n.tokenId) : null;
+      const enemyStatsHtml = n.type === 'battle' ? (linkedToken ? `
+        <div class="enemy-stats linked" data-role="tokenpreview" title="クリックで駒パネルを開く">
+          <div class="enemy-stats-label">🧑 ${escapeHtml(linkedToken.name || '(名称未設定の駒)')}<span class="token-unlink" data-role="tokenunlink" title="駒との連携を解除">連携解除</span></div>
+          <div class="enemy-stats-text readonly">${escapeHtml(formatTokenStats(linkedToken, projectEdition())) || '（駒にステータス未入力）'}</div>
+        </div>` : `
+        <div class="enemy-stats">
+          <div class="enemy-stats-label">敵ステータス・技能（${projectEdition()==='6th' ? '6版' : '7版'}）</div>
+          <div class="enemy-stats-text" contenteditable="true" spellcheck="false" data-role="enemystats" data-placeholder="${escapeHtml(ENEMY_PLACEHOLDER[projectEdition()])}">${escapeHtml(n.enemyStats||'')}</div>
+        </div>`) : '';
+
       const linkTarget = n.linkTo ? state.nodes.find(x=>x.id===n.linkTo) : null;
       const linkHtml = `
         <div class="link-row${linkTarget?' has-target':''}" data-role="linkrow" title="${linkTarget?'タップでジャンプ':'タップでリンク先を選択'}">
@@ -1074,12 +1721,14 @@
           <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
           ${n.type==='choice' ? '<span class="branch-badge">◆</span>' : ''}
           <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
+          <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
           <span class="node-dup" data-role="dup" title="複製">⧉</span>
           <span class="node-del" data-role="del">×</span>
         </div>
         <div class="node-body">
           <div class="node-text" contenteditable="true" spellcheck="false" data-role="text">${escapeHtml(n.text)}</div>
           ${starsHtml}
+          ${enemyStatsHtml}
           ${linkHtml}
         </div>
         <div class="connect-handle" data-role="handle" title="ドラッグして接続"></div>
@@ -1089,12 +1738,33 @@
       // drag node by header (pointer events: mouse + touch)
       const head = el.querySelector('.node-head');
       head.addEventListener('pointerdown', (e)=>{
-        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup') return;
+        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename') return;
         if(e.ctrlKey || e.metaKey){
           e.stopPropagation();
           e.preventDefault();
           toggleSelect(n.id);
           return;
+        }
+        if(e.target.dataset.role === 'title'){
+          // already editing: let the browser place the cursor/selection normally
+          // instead of hijacking the tap to start a node-drag
+          if(document.activeElement === e.target){
+            e.stopPropagation();
+            return;
+          }
+          // the title sits inside the drag handle, so a plain tap would normally
+          // start a node-drag; detect a double-tap here and enter rename mode instead
+          const now = Date.now();
+          const last = parseInt(head.dataset.lastTitleTap || '0', 10);
+          if(now - last < 400){
+            head.dataset.lastTitleTap = '0';
+            e.preventDefault();
+            e.stopPropagation();
+            e.target.focus();
+            document.execCommand('selectAll', false, null);
+            return;
+          }
+          head.dataset.lastTitleTap = String(now);
         }
         if(!selectedIds.has(n.id) && selectedIds.size){
           clearSelection();
@@ -1122,6 +1792,12 @@
       });
       titleEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); titleEl.blur(); } });
 
+      el.querySelector('[data-role="rename"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        titleEl.focus();
+        document.execCommand('selectAll', false, null);
+      });
+
       const textEl = el.querySelector('[data-role="text"]');
       textEl.addEventListener('focus', ()=>{ textEl.dataset.before = n.text; });
       textEl.addEventListener('blur', ()=>{
@@ -1129,6 +1805,34 @@
         if(val !== textEl.dataset.before) pushHistory();
         n.text = val; save(); render(); applyViewport();
       });
+
+      const enemyStatsEl = el.querySelector('[data-role="enemystats"]');
+      if(enemyStatsEl){
+        enemyStatsEl.addEventListener('focus', ()=>{ enemyStatsEl.dataset.before = n.enemyStats||''; });
+        enemyStatsEl.addEventListener('blur', ()=>{
+          const val = enemyStatsEl.textContent.trim();
+          if(val !== enemyStatsEl.dataset.before) pushHistory();
+          n.enemyStats = val; save(); render(); applyViewport();
+        });
+      }
+      const tokenUnlinkEl = el.querySelector('[data-role="tokenunlink"]');
+      if(tokenUnlinkEl){
+        tokenUnlinkEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          unlinkTokenFromNode(n.id);
+        });
+        tokenUnlinkEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+      }
+      const tokenPreviewEl = el.querySelector('[data-role="tokenpreview"]');
+      if(tokenPreviewEl){
+        tokenPreviewEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        tokenPreviewEl.addEventListener('click', (e)=>{
+          if(e.target === tokenUnlinkEl) return;
+          e.stopPropagation();
+          if(!tokensPanel.classList.contains('open')) renderTokenList();
+          tokensPanel.classList.add('open');
+        });
+      }
 
       // jump-link row
       const linkRow = el.querySelector('[data-role="linkrow"]');
@@ -1291,6 +1995,11 @@
   document.addEventListener('pointermove', (e)=>{
     if(activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
 
+    if(tokenDragging){
+      updateTokenDrag(e.clientX, e.clientY);
+      return;
+    }
+
     if(pinchState && activePointers.size === 2){
       const p1 = activePointers.get(pinchState.ids[0]);
       const p2 = activePointers.get(pinchState.ids[1]);
@@ -1371,6 +2080,10 @@
   });
 
   function handlePointerEnd(e){
+    if(tokenDragging){
+      endTokenDrag(e.clientX, e.clientY);
+      return;
+    }
     activePointers.delete(e.pointerId);
     if(activePointers.size < 2){
       const wasPinching = !!pinchState;
@@ -1474,7 +2187,7 @@
     detailsPanel.classList.remove('open');
     showConfirm('すべてのシーン・付箋・繋がりを削除します。よろしいですか？', ()=>{
       pushHistory();
-      state = { nodes: [], links: [], notes: [] };
+      state = { nodes: [], links: [], notes: [], tokens: state.tokens };
       selectedIds.clear();
       render();
       save();
@@ -1482,17 +2195,35 @@
     });
   });
 
+  function downloadJson(filename, data){
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 1000);
+  }
+
+  function safeFileName(name){
+    return (name || 'シナリオ').replace(/[\\/:*?"<>|]/g, '_');
+  }
+
   function showExportModal(){
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     const json = JSON.stringify(state, null, 1);
+    const proj = currentProject();
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>このテキストをコピーして保存・共有できます。「読み込み」に貼り付ければ復元できます。</p>
+        <p>ファイルに保存してスマホ・PC間で共有できます（Google Drive・LINEなどで送るだけで、他の端末の「読み込み」からファイルを選んで復元できます）。コピーしてどこかに貼り付けても構いません。</p>
         <textarea readonly spellcheck="false">${escapeHtml(json)}</textarea>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
-          <button class="confirm" data-role="copy">コピー</button>
+          <button data-role="copy">コピー</button>
+          <button class="confirm" data-role="save">ファイルに保存</button>
         </div>
       </div>
     `;
@@ -1508,6 +2239,9 @@
       copyBtn.textContent = 'コピーしました';
       setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
     });
+    overlay.querySelector('[data-role="save"]').addEventListener('click', ()=>{
+      downloadJson(`星図_${safeFileName(proj && proj.name)}.json`, state);
+    });
   }
 
   function showImportModal(){
@@ -1515,8 +2249,9 @@
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>書き出したJSONを貼り付けてください。</p>
+        <p>書き出したJSONファイルを選ぶか、テキストを貼り付けてください。</p>
         <div class="hint">現在の内容は上書きされます（読み込み後も「元に戻す」で復元できます）。</div>
+        <input type="file" accept="application/json,.json" data-role="file" style="margin-bottom:10px;" />
         <textarea placeholder='{"nodes": [...], "links": [...]}' spellcheck="false"></textarea>
         <div class="modal-actions">
           <button data-role="close">キャンセル</button>
@@ -1529,6 +2264,13 @@
     const close = ()=> overlay.remove();
     overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
     overlay.querySelector('[data-role="close"]').addEventListener('click', close);
+    overlay.querySelector('[data-role="file"]').addEventListener('change', (e)=>{
+      const file = e.target.files && e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{ ta.value = String(reader.result || ''); };
+      reader.readAsText(file);
+    });
     overlay.querySelector('[data-role="load"]').addEventListener('click', ()=>{
       try{
         const parsed = JSON.parse(ta.value);
@@ -1538,9 +2280,11 @@
           nodes: parsed.nodes,
           links: parsed.links,
           notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+          tokens: Array.isArray(parsed.tokens) ? parsed.tokens : [],
         };
         selectedIds.clear();
         render();
+        renderTokenList();
         save();
         applyViewport();
         fitView();
@@ -1554,6 +2298,106 @@
 
   document.getElementById('exportBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showExportModal(); });
   document.getElementById('importBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showImportModal(); });
+
+  /* ---- whole-app backup: every project + its graph, in one file (for moving between phone/PC) ---- */
+  function buildFullBackup(){
+    const graphs = {};
+    projects.forEach(p=>{ graphs[p.id] = (p.id === activeProjectId) ? state : loadGraphFor(p.id); });
+    return { version: 1, projects, activeProjectId, graphs };
+  }
+
+  function showExportAllModal(){
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const backup = buildFullBackup();
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <p>全プロジェクト（${projects.length}件）をひとつのファイルにまとめて保存します。Google DriveやLINEなどでもう片方の端末に送り、「全て読み込み」でそのファイルを選べば復元できます。</p>
+        <div class="modal-actions">
+          <button data-role="close">閉じる</button>
+          <button class="confirm" data-role="save">ファイルに保存</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=> overlay.remove();
+    overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
+    overlay.querySelector('[data-role="close"]').addEventListener('click', close);
+    overlay.querySelector('[data-role="save"]').addEventListener('click', ()=>{
+      downloadJson('星図_全プロジェクト.json', backup);
+      close();
+    });
+  }
+
+  function showImportAllModal(){
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box wide">
+        <p>「全て書き出し」で保存したファイルを選んでください。</p>
+        <div class="hint">今ある全プロジェクトはこのファイルの内容に置き換わります（読み込み後も「元に戻す」はこのプロジェクトの分だけ有効です。ご注意ください）。</div>
+        <input type="file" accept="application/json,.json" data-role="file" style="margin-bottom:10px;" />
+        <div class="modal-actions">
+          <button data-role="close">キャンセル</button>
+          <button class="confirm" data-role="load" disabled>読み込む</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=> overlay.remove();
+    overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
+    overlay.querySelector('[data-role="close"]').addEventListener('click', close);
+    const loadBtn = overlay.querySelector('[data-role="load"]');
+    let parsedBackup = null;
+    overlay.querySelector('[data-role="file"]').addEventListener('change', (e)=>{
+      const file = e.target.files && e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const parsed = JSON.parse(String(reader.result || ''));
+          if(!Array.isArray(parsed.projects) || !parsed.graphs) throw new Error('bad shape');
+          parsedBackup = parsed;
+          loadBtn.disabled = false;
+        }catch(err){
+          parsedBackup = null;
+          loadBtn.disabled = true;
+        }
+      };
+      reader.readAsText(file);
+    });
+    loadBtn.addEventListener('click', ()=>{
+      if(!parsedBackup) return;
+      projects = parsedBackup.projects;
+      Object.keys(parsedBackup.graphs).forEach(id=>{
+        const g = parsedBackup.graphs[id];
+        localStorage.setItem(graphKey(id), JSON.stringify({
+          nodes: Array.isArray(g.nodes) ? g.nodes : [],
+          links: Array.isArray(g.links) ? g.links : [],
+          notes: Array.isArray(g.notes) ? g.notes : [],
+          tokens: Array.isArray(g.tokens) ? g.tokens : [],
+        }));
+      });
+      saveProjectsList();
+      activeProjectId = (parsedBackup.activeProjectId && projects.some(p=>p.id===parsedBackup.activeProjectId))
+        ? parsedBackup.activeProjectId : projects[0].id;
+      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+      state = loadGraphFor(activeProjectId);
+      history = [];
+      future = [];
+      selectedIds.clear();
+      updateProjectLabel();
+      updateEditionTabs();
+      render();
+      renderTokenList();
+      applyViewport();
+      fitView();
+      close();
+    });
+  }
+
+  document.getElementById('exportAllBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showExportAllModal(); });
+  document.getElementById('importAllBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showImportAllModal(); });
 
   /* ---- auto layout: arrange nodes into columns following link direction ---- */
   function autoLayout(){
