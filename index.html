@@ -594,8 +594,11 @@
         <div class="details-section">
           <h3>駒（キャラクター/NPC・モンスター）</h3>
           <div class="token-list" id="tokenList"></div>
-          <button class="fullwidth primary" id="newTokenBtn" style="margin-top:8px;">＋ 新規の駒</button>
-          <div class="hint" style="margin-top:8px;">左の⠿⠿をドラッグして戦闘シーンのノードにドロップすると連携します（連携後は駒を編集すると連携中の全ノードに反映されます）。</div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="primary" id="newTokenBtn" style="flex:1;">＋ 新規の駒</button>
+            <button id="newCreatureBtn" style="flex:1;">神話生物から作成</button>
+          </div>
+          <div class="hint" style="margin-top:8px;">左の⠿⠿をドラッグして戦闘シーンのノードにドロップすると連携します（連携後は駒を編集すると連携中の全ノードに反映されます）。神話生物のステータスは目安です。必要に応じて調整してください。</div>
         </div>
       </div>
     </div>
@@ -860,6 +863,10 @@
   document.getElementById('newTokenBtn').addEventListener('click', (e)=>{
     e.stopPropagation();
     createToken();
+  });
+  document.getElementById('newCreatureBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    openCreaturePicker(e.currentTarget);
   });
 
   /* ---- responsive node width kept in sync with CSS ---- */
@@ -1133,6 +1140,36 @@
      editing the token updates every scene that uses it. */
   const TOKEN_CHAR_FIELDS = [['str','STR'],['con','CON'],['pow','POW'],['dex','DEX'],['app','APP'],['siz','SIZ'],['int','INT'],['edu','EDU']];
 
+  // approximate starting stats for common Mythos creatures (7th-edition/percentile
+  // scale -- converted to 6th-edition scale automatically for 6th-edition projects).
+  // these are rough, generic reference values meant as a quick starting point for
+  // a one-off encounter, not a verbatim reproduction of any sourcebook -- adjust
+  // them to taste once created.
+  const MYTHOS_CREATURES = [
+    { name:'ディープワン', str:'70', con:'65', pow:'50', dex:'40', app:'25', siz:'75', int:'60', edu:'',
+      skills:'回避30 かみつき50 組み付き60 目星50' },
+    { name:'グール', str:'80', con:'70', pow:'40', dex:'60', app:'10', siz:'65', int:'40', edu:'',
+      skills:'回避40 かみつき50 組み付き60 隠れる50 忍び歩き40' },
+    { name:'バイアクヘー', str:'60', con:'55', pow:'45', dex:'70', app:'15', siz:'60', int:'35', edu:'',
+      skills:'回避50 かみつき40 組み付き45 隠れる35' },
+    { name:'ショゴス', str:'200', con:'200', pow:'80', dex:'30', app:'0', siz:'250', int:'50', edu:'',
+      skills:'回避10 押しつぶす70 変形50' },
+    { name:'ゾンビ', str:'60', con:'100', pow:'30', dex:'25', app:'0', siz:'65', int:'20', edu:'',
+      skills:'回避10 組み付き50' },
+    { name:'ミ=ゴ', str:'65', con:'55', pow:'65', dex:'60', app:'30', siz:'55', int:'80', edu:'60',
+      skills:'回避50 はさみ55 化学45 天文45' },
+    { name:'ハンティング・ホラー', str:'90', con:'80', pow:'70', dex:'65', app:'15', siz:'100', int:'40', edu:'',
+      skills:'回避45 かみつき60 締め付け55' },
+    { name:'ナイトゴーント', str:'70', con:'60', pow:'45', dex:'75', app:'20', siz:'65', int:'30', edu:'',
+      skills:'回避55 組み付き60 くすぐり70' },
+    { name:'スター・ヴァンパイア', str:'60', con:'55', pow:'60', dex:'65', app:'0', siz:'55', int:'40', edu:'',
+      skills:'回避50 吸血60 隠れる80' },
+    { name:'次元の断層渡り', str:'90', con:'80', pow:'60', dex:'50', app:'15', siz:'90', int:'50', edu:'',
+      skills:'回避35 組み付き65 かみつき55' },
+    { name:'無定形の落とし子', str:'80', con:'80', pow:'50', dex:'35', app:'0', siz:'90', int:'40', edu:'',
+      skills:'回避20 押しつぶす60 組み付き55' },
+  ];
+
   function getToken(id){
     return state.tokens.find(t=>t.id===id) || null;
   }
@@ -1250,6 +1287,26 @@
       const el = document.querySelector(`[data-token-item-id="${t.id}"] [data-role="name"]`);
       if(el) el.focus();
     }, 30);
+  }
+
+  function createTokenFromCreature(creature){
+    pushHistory();
+    const edition = projectEdition();
+    const t = { id: uid(), name: creature.name, skills: creature.skills || '' };
+    TOKEN_CHAR_FIELDS.forEach(([key])=>{
+      const v = parseFloat(creature[key]);
+      t[key] = isNaN(v) ? '' : String(edition === '6th' ? Math.round(v / 5) : v);
+    });
+    state.tokens.push(t);
+    save();
+    renderTokenList();
+    setTimeout(()=>{
+      const el = document.querySelector(`[data-token-item-id="${t.id}"]`);
+      if(!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('flash');
+      setTimeout(()=> el.classList.remove('flash'), 1400);
+    }, 50);
   }
 
   function deleteToken(id){
@@ -1747,6 +1804,62 @@
     setTimeout(()=> searchEl.focus(), 20);
 
     setTimeout(()=> document.addEventListener('pointerdown', onPickerOutside, true), 20);
+  }
+
+  /* ---- mythos creature picker (search + pick a template for a new token) ---- */
+  let creaturePickerEl = null;
+  function closeCreaturePicker(){
+    if(creaturePickerEl){ creaturePickerEl.remove(); creaturePickerEl = null; }
+    document.removeEventListener('pointerdown', onCreaturePickerOutside, true);
+  }
+  function onCreaturePickerOutside(e){
+    if(creaturePickerEl && !creaturePickerEl.contains(e.target)) closeCreaturePicker();
+  }
+  function openCreaturePicker(anchorEl){
+    closeCreaturePicker();
+    const rect = anchorEl.getBoundingClientRect();
+
+    creaturePickerEl = document.createElement('div');
+    creaturePickerEl.className = 'node-picker';
+    creaturePickerEl.innerHTML = `
+      <input type="text" placeholder="神話生物を検索..." data-role="search" spellcheck="false" />
+      <div class="picker-list" data-role="list"></div>
+    `;
+    document.body.appendChild(creaturePickerEl);
+
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    const pw = 220, ph = Math.min(280, creaturePickerEl.scrollHeight || 280);
+    if(left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    if(top + ph > window.innerHeight - 8) top = rect.top - ph - 6;
+    if(top < 8) top = 8;
+    creaturePickerEl.style.left = Math.max(8,left) + 'px';
+    creaturePickerEl.style.top = top + 'px';
+
+    const listEl = creaturePickerEl.querySelector('[data-role="list"]');
+    function renderList(filter){
+      const q = (filter||'').trim().toLowerCase();
+      const filtered = MYTHOS_CREATURES.filter(c => !q || c.name.toLowerCase().includes(q));
+      if(!filtered.length){
+        listEl.innerHTML = `<div class="picker-empty">一致する神話生物がありません</div>`;
+        return;
+      }
+      listEl.innerHTML = filtered.map(c=>`<div class="picker-item" data-name="${escapeHtml(c.name)}"><span>${escapeHtml(c.name)}</span></div>`).join('');
+      listEl.querySelectorAll('.picker-item').forEach(itemEl=>{
+        itemEl.addEventListener('click', ()=>{
+          const creature = MYTHOS_CREATURES.find(c=>c.name === itemEl.dataset.name);
+          closeCreaturePicker();
+          if(creature) createTokenFromCreature(creature);
+        });
+      });
+    }
+    renderList('');
+    const searchEl = creaturePickerEl.querySelector('[data-role="search"]');
+    searchEl.addEventListener('input', ()=> renderList(searchEl.value));
+    searchEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+    setTimeout(()=> searchEl.focus(), 20);
+
+    setTimeout(()=> document.addEventListener('pointerdown', onCreaturePickerOutside, true), 20);
   }
 
   document.getElementById('zoomInBtn').addEventListener('click', ()=> zoomAtCenter(1.2));
