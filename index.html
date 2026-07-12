@@ -768,6 +768,7 @@
   /* ---- details panel toggle ---- */
   detailsBtn.addEventListener('click', (e)=>{
     e.stopPropagation();
+    closeTokensPanel();
     detailsPanel.classList.toggle('open');
   });
   document.addEventListener('click', (e)=>{
@@ -832,6 +833,7 @@
   function closeTokensPanel(){ tokensPanel.classList.remove('open'); }
   tokensBtn.addEventListener('click', (e)=>{
     e.stopPropagation();
+    detailsPanel.classList.remove('open');
     if(!tokensPanel.classList.contains('open')) renderTokenList();
     tokensPanel.classList.toggle('open');
   });
