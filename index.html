@@ -329,10 +329,6 @@
 
   .enemy-stats{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .enemy-stats-label{font-size:10px;color:var(--blood);letter-spacing:0.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
-  .enemy-stats.linked .enemy-stats-label{color:var(--brass);}
-  .enemy-stats.linked{cursor:pointer;}
-  .token-unlink{font-size:9.5px;color:var(--ink-dim);cursor:pointer;text-decoration:underline;white-space:nowrap;}
-  .token-unlink:hover{color:var(--blood);}
   .enemy-stats-text{
     font-family:monospace;font-size:11.5px;line-height:1.6;color:var(--ink-dim);
     outline:none;min-height:20px;white-space:pre-wrap;overflow-wrap:break-word;
@@ -342,7 +338,17 @@
     color:#5c5870;
   }
   .enemy-stats-text:focus{color:var(--ink);}
-  .enemy-stats-text.readonly{cursor:default;}
+
+  .linked-tokens{display:flex;flex-direction:column;gap:4px;margin-bottom:6px;}
+  .linked-token-chip{
+    display:flex;align-items:center;justify-content:space-between;gap:6px;
+    padding:4px 8px;background:var(--panel-2);border:1px solid var(--brass-dim);border-radius:12px;
+    cursor:pointer;font-size:11px;color:var(--brass);
+  }
+  .linked-token-chip:hover{border-color:var(--brass);}
+  .linked-token-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .linked-token-unlink{flex:0 0 auto;color:var(--ink-dim);font-size:12px;cursor:pointer;}
+  .linked-token-unlink:hover{color:var(--blood);}
 
   .link-row{
     display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
@@ -391,6 +397,7 @@
     100%{ box-shadow:0 0 0 0 rgba(184,148,79,0), 0 6px 18px rgba(0,0,0,0.45); }
   }
   .node.flash{ animation: flashPulse 0.9s ease-out 2; }
+  .token-item.flash{ animation: flashPulse 0.9s ease-out 2; }
 
   .connect-handle{
     position:absolute;right:-8px;top:50%;transform:translateY(-50%);
@@ -554,6 +561,8 @@
     .token-item-copy{ width:28px; height:28px; line-height:26px; font-size:16px; }
     .token-item-del{ width:28px; height:28px; line-height:26px; font-size:16px; }
     .token-stat-field input{ padding:6px 2px; font-size:13px; }
+    .linked-token-chip{ padding:7px 10px; }
+    .linked-token-unlink{ font-size:15px; padding:2px 4px; }
   }
 </style>
 </head>
@@ -876,6 +885,13 @@
           if(!Array.isArray(parsed.links)) parsed.links = [];
           if(!Array.isArray(parsed.notes)) parsed.notes = [];
           if(!Array.isArray(parsed.tokens)) parsed.tokens = [];
+          // migrate the old single-token-per-node shape into a list
+          parsed.nodes.forEach(n=>{
+            if(!Array.isArray(n.tokenIds)){
+              n.tokenIds = n.tokenId ? [n.tokenId] : [];
+            }
+            delete n.tokenId;
+          });
           return parsed;
         }
       }
@@ -1178,16 +1194,6 @@
     return parts.join(' ');
   }
 
-  function formatTokenStats(t, edition){
-    if(!t) return '';
-    const charStr = TOKEN_CHAR_FIELDS.map(([k,label])=> t[k] ? label+t[k] : null).filter(Boolean).join(' ');
-    const parts = [];
-    if(charStr) parts.push(charStr);
-    parts.push(formatDerivedStats(t, edition));
-    if(t.skills) parts.push('技能: ' + t.skills);
-    return parts.join(' / ');
-  }
-
   /* ---- CCFOLIA character import format ----
      CCFOLIA (ccfolia.com) creates a character token when this JSON shape is
      pasted onto its room canvas. Best-effort reconstruction of that format --
@@ -1245,29 +1251,49 @@
   function deleteToken(id){
     pushHistory();
     state.tokens = state.tokens.filter(t=>t.id!==id);
-    state.nodes.forEach(n=>{ if(n.tokenId === id) n.tokenId = null; });
+    state.nodes.forEach(n=>{
+      if(Array.isArray(n.tokenIds)) n.tokenIds = n.tokenIds.filter(tid=>tid!==id);
+    });
     render();
     save();
     renderTokenList();
   }
 
+  // a battle scene can hold several enemies, so nodes keep a *list* of linked
+  // token ids (n.tokenIds) rather than a single one
   function linkTokenToNode(tokenId, nodeId){
     const n = state.nodes.find(x=>x.id===nodeId);
     if(!n || n.type !== 'battle') return;
-    if(n.tokenId === tokenId) return;
+    if(!Array.isArray(n.tokenIds)) n.tokenIds = [];
+    if(n.tokenIds.includes(tokenId)) return;
     pushHistory();
-    n.tokenId = tokenId;
+    n.tokenIds.push(tokenId);
     render();
     save();
   }
 
-  function unlinkTokenFromNode(nodeId){
+  function unlinkTokenFromNode(nodeId, tokenId){
     const n = state.nodes.find(x=>x.id===nodeId);
-    if(!n || !n.tokenId) return;
+    if(!n || !Array.isArray(n.tokenIds)) return;
+    const idx = n.tokenIds.indexOf(tokenId);
+    if(idx === -1) return;
     pushHistory();
-    n.tokenId = null;
+    n.tokenIds.splice(idx, 1);
     render();
     save();
+  }
+
+  function openTokenDetail(tokenId){
+    renderTokenList();
+    tokensPanel.classList.add('open');
+    detailsPanel.classList.remove('open');
+    setTimeout(()=>{
+      const itemEl = tokensPanel.querySelector(`[data-token-item-id="${tokenId}"]`);
+      if(!itemEl) return;
+      itemEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      itemEl.classList.add('flash');
+      setTimeout(()=> itemEl.classList.remove('flash'), 1400);
+    }, 20);
   }
 
   function renderTokenList(){
@@ -1424,7 +1450,7 @@
     }
     const n = {
       id: uid(), x: px, y: py, title: '', text: '',
-      type: t, stars: t === 'ending' ? 3 : 0, linkTo: null, enemyStats: '', tokenId: null,
+      type: t, stars: t === 'ending' ? 3 : 0, linkTo: null, enemyStats: '', tokenIds: [],
     };
     pushHistory();
     state.nodes.push(n);
@@ -1457,7 +1483,7 @@
     const src = state.nodes.find(n=>n.id===id);
     if(!src) return;
     pushHistory();
-    const copy = { ...src, id: uid(), x: src.x + 28, y: src.y + 28 };
+    const copy = { ...src, id: uid(), x: src.x + 28, y: src.y + 28, tokenIds: [...(src.tokenIds||[])] };
     state.nodes.push(copy);
     render();
     save();
@@ -1550,8 +1576,8 @@
     const headH = 34;
     const bodyH = Math.max(40, 20 + Math.ceil((n.text||'').length/22)*16);
     const starH = n.type === 'ending' ? 26 : 0;
-    const enemyStatsLen = (n.type === 'battle' && n.tokenId) ? formatTokenStats(getToken(n.tokenId), projectEdition()).length : (n.enemyStats||'').length;
-    const enemyH = n.type === 'battle' ? (30 + Math.ceil(enemyStatsLen/22)*15) : 0;
+    const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? n.tokenIds.length : 0;
+    const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
     const linkH = 26;
     const h = headH + bodyH + starH + enemyH + linkH;
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
@@ -1840,16 +1866,22 @@
           ${[1,2,3,4,5].map(s=>`<span class="star${s<=(n.stars||0)?' filled':''}" data-role="star" data-val="${s}">★</span>`).join('')}
         </div>` : '';
 
-      const linkedToken = (n.type === 'battle' && n.tokenId) ? getToken(n.tokenId) : null;
-      const enemyStatsHtml = n.type === 'battle' ? (linkedToken ? `
-        <div class="enemy-stats linked" data-role="tokenpreview" title="クリックで駒パネルを開く">
-          <div class="enemy-stats-label">${escapeHtml(linkedToken.name || '(名称未設定の駒)')}<span class="token-unlink" data-role="tokenunlink" title="駒との連携を解除">連携解除</span></div>
-          <div class="enemy-stats-text readonly">${escapeHtml(formatTokenStats(linkedToken, projectEdition())) || '（駒にステータス未入力）'}</div>
-        </div>` : `
+      const linkedTokens = (n.type === 'battle' && Array.isArray(n.tokenIds))
+        ? n.tokenIds.map(id=>getToken(id)).filter(Boolean) : [];
+      const linkedTokensHtml = linkedTokens.length ? `
+        <div class="linked-tokens">
+          ${linkedTokens.map(tok => `
+            <div class="linked-token-chip" data-role="linkedtoken" data-token-id="${tok.id}" title="クリックで駒のステータスを見る">
+              <span class="linked-token-name">${escapeHtml(tok.name || '(名称未設定の駒)')}</span>
+              <span class="linked-token-unlink" data-role="linkedtokenunlink" data-token-id="${tok.id}" title="連携解除">×</span>
+            </div>`).join('')}
+        </div>` : '';
+      const enemyStatsHtml = n.type === 'battle' ? `
         <div class="enemy-stats">
           <div class="enemy-stats-label">敵ステータス・技能（${projectEdition()==='6th' ? '6版' : '7版'}）</div>
+          ${linkedTokensHtml}
           <div class="enemy-stats-text" contenteditable="true" spellcheck="false" data-role="enemystats" data-placeholder="${escapeHtml(ENEMY_PLACEHOLDER[projectEdition()])}">${escapeHtml(n.enemyStats||'')}</div>
-        </div>`) : '';
+        </div>` : '';
 
       const linkTarget = n.linkTo ? state.nodes.find(x=>x.id===n.linkTo) : null;
       const linkHtml = `
@@ -1958,24 +1990,20 @@
           n.enemyStats = val; save(); render(); applyViewport();
         });
       }
-      const tokenUnlinkEl = el.querySelector('[data-role="tokenunlink"]');
-      if(tokenUnlinkEl){
-        tokenUnlinkEl.addEventListener('click', (e)=>{
+      el.querySelectorAll('[data-role="linkedtoken"]').forEach(chipEl=>{
+        chipEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        chipEl.addEventListener('click', (e)=>{
+          if(e.target.dataset.role === 'linkedtokenunlink') return;
           e.stopPropagation();
-          unlinkTokenFromNode(n.id);
+          openTokenDetail(chipEl.getAttribute('data-token-id'));
         });
-        tokenUnlinkEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
-      }
-      const tokenPreviewEl = el.querySelector('[data-role="tokenpreview"]');
-      if(tokenPreviewEl){
-        tokenPreviewEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
-        tokenPreviewEl.addEventListener('click', (e)=>{
-          if(e.target === tokenUnlinkEl) return;
+      });
+      el.querySelectorAll('[data-role="linkedtokenunlink"]').forEach(unlinkEl=>{
+        unlinkEl.addEventListener('click', (e)=>{
           e.stopPropagation();
-          if(!tokensPanel.classList.contains('open')) renderTokenList();
-          tokensPanel.classList.add('open');
+          unlinkTokenFromNode(n.id, unlinkEl.getAttribute('data-token-id'));
         });
-      }
+      });
 
       // jump-link row
       const linkRow = el.querySelector('[data-role="linkrow"]');
