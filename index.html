@@ -566,7 +566,7 @@
       <button id="addNoteBtn">＋ 付箋</button>
     </div>
     <button class="details-toggle" id="tokensBtn" title="駒（NPC/モンスター）を作成・管理">
-      🧑 駒
+      駒
     </button>
     <div class="details-panel" id="tokensPanel">
       <div class="details-inner">
@@ -1239,7 +1239,7 @@
     closeTokensPanel();
     const ghost = document.createElement('div');
     ghost.className = 'token-ghost';
-    ghost.textContent = '🧑 ' + (tok.name || '(名称未設定)');
+    ghost.textContent = tok.name || '(名称未設定)';
     document.body.appendChild(ghost);
     ghost.style.left = clientX + 'px';
     ghost.style.top = clientY + 'px';
@@ -1700,7 +1700,7 @@
       const linkedToken = (n.type === 'battle' && n.tokenId) ? getToken(n.tokenId) : null;
       const enemyStatsHtml = n.type === 'battle' ? (linkedToken ? `
         <div class="enemy-stats linked" data-role="tokenpreview" title="クリックで駒パネルを開く">
-          <div class="enemy-stats-label">🧑 ${escapeHtml(linkedToken.name || '(名称未設定の駒)')}<span class="token-unlink" data-role="tokenunlink" title="駒との連携を解除">連携解除</span></div>
+          <div class="enemy-stats-label">${escapeHtml(linkedToken.name || '(名称未設定の駒)')}<span class="token-unlink" data-role="tokenunlink" title="駒との連携を解除">連携解除</span></div>
           <div class="enemy-stats-text readonly">${escapeHtml(formatTokenStats(linkedToken, projectEdition())) || '（駒にステータス未入力）'}</div>
         </div>` : `
         <div class="enemy-stats">
