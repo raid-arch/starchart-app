@@ -404,6 +404,20 @@
   }
   .link-clear:hover{color:var(--blood);}
 
+  .current-row{
+    display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
+    cursor:pointer;
+  }
+  .current-icon{flex:0 0 auto;font-size:11px;opacity:0.35;color:var(--ink-dim);}
+  .current-label{flex:1;font-size:11px;color:#5c5870;}
+  .current-row:hover .current-icon, .current-row:hover .current-label{color:var(--brass);opacity:1;}
+  .current-row.is-current .current-icon{opacity:1;color:var(--brass);}
+  .current-row.is-current .current-label{color:var(--brass);font-weight:700;}
+  .node.is-current{
+    outline:2px solid var(--brass);outline-offset:2px;
+    box-shadow:0 0 0 5px rgba(184,148,79,0.22), 0 6px 18px rgba(0,0,0,0.45);
+  }
+
   /* node picker popover (for setting a jump-link) */
   .node-picker{
     position:fixed;z-index:80;width:220px;max-height:280px;
@@ -749,7 +763,7 @@
 
   let projects = [];        // [{id, name, updatedAt}]
   let activeProjectId = null;
-  let state = { nodes: [], links: [], notes: [], tokens: [] };
+  let state = { nodes: [], links: [], notes: [], tokens: [], currentNodeId: null };
   let history = [];        // undo stack (state snapshots)
   let future = [];         // redo stack
   let dragging = null;      // {id, grabDX, grabDY}
@@ -933,18 +947,20 @@
           if(!Array.isArray(parsed.links)) parsed.links = [];
           if(!Array.isArray(parsed.notes)) parsed.notes = [];
           if(!Array.isArray(parsed.tokens)) parsed.tokens = [];
+          if(parsed.currentNodeId === undefined) parsed.currentNodeId = null;
           // migrate the old single-token-per-node shape into a list
           parsed.nodes.forEach(n=>{
             if(!Array.isArray(n.tokenIds)){
               n.tokenIds = n.tokenId ? [n.tokenId] : [];
             }
             delete n.tokenId;
+            if(!Array.isArray(n.clues)) n.clues = [];
           });
           return parsed;
         }
       }
     }catch(e){ /* fall through to empty graph */ }
-    return { nodes: [], links: [], notes: [] , tokens: [] };
+    return { nodes: [], links: [], notes: [], tokens: [], currentNodeId: null };
   }
 
   function saveProjectsList(){
@@ -1023,7 +1039,7 @@
     const id = uid();
     const name = 'シナリオ' + (projects.length + 1);
     projects.push({ id, name, updatedAt: Date.now(), edition: '7th' });
-    localStorage.setItem(graphKey(id), JSON.stringify({ nodes: [], links: [], notes: [], tokens: [] }));
+    localStorage.setItem(graphKey(id), JSON.stringify({ nodes: [], links: [], notes: [], tokens: [], currentNodeId: null }));
     saveProjectsList();
     switchProject(id);
     renderProjectList();
@@ -1602,7 +1618,15 @@
     state.nodes = state.nodes.filter(n=>n.id!==id);
     state.links = state.links.filter(l=>l.from!==id && l.to!==id);
     state.nodes.forEach(n=>{ if(n.linkTo === id) n.linkTo = null; });
+    if(state.currentNodeId === id) state.currentNodeId = null;
     selectedIds.delete(id);
+    render();
+    save();
+  }
+
+  function setCurrentNode(id){
+    pushHistory();
+    state.currentNodeId = (state.currentNodeId === id) ? null : id;
     render();
     save();
   }
@@ -1719,7 +1743,8 @@
     const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
     const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
     const linkH = 26;
-    const h = headH + bodyH + starH + clueH + enemyH + linkH;
+    const currentRowH = 26;
+    const h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH;
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
     return { x: n.x + w/2, y: n.y + h/2 };
@@ -2063,7 +2088,7 @@
     state.nodes.forEach(n=>{
       const t = typeOf(n.type);
       const el = document.createElement('div');
-      el.className = 'node type-' + n.type + (selectedIds.has(n.id) ? ' selected' : '');
+      el.className = 'node type-' + n.type + (selectedIds.has(n.id) ? ' selected' : '') + (state.currentNodeId === n.id ? ' is-current' : '');
       el.setAttribute('data-node-id', n.id);
       el.style.left = n.x+'px';
       el.style.top = n.y+'px';
@@ -2099,6 +2124,13 @@
           ${linkTarget ? '<span class="link-clear" data-role="linkclear" title="リンク解除">×</span>' : ''}
         </div>`;
 
+      const isCurrent = state.currentNodeId === n.id;
+      const currentRowHtml = `
+        <div class="current-row${isCurrent?' is-current':''}" data-role="currentrow" title="このシーンを「現在地」としてマーク／解除">
+          <span class="current-icon">◉</span>
+          <span class="current-label">${isCurrent ? '現在地' : '現在地にする'}</span>
+        </div>`;
+
       const cluesHtml = (n.clues && n.clues.length) ? `
         <div class="clue-list">
           ${n.clues.map(c => `
@@ -2127,6 +2159,7 @@
           ${starsHtml}
           ${enemyStatsHtml}
           ${linkHtml}
+          ${currentRowHtml}
         </div>
         <div class="connect-handle" data-role="handle" title="ドラッグして接続"></div>
       `;
@@ -2286,6 +2319,13 @@
           applyViewport();
         });
       }
+
+      const currentRow = el.querySelector('[data-role="currentrow"]');
+      currentRow.addEventListener('pointerdown', (e)=> e.stopPropagation());
+      currentRow.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        setCurrentNode(n.id);
+      });
 
       // delete
       el.querySelector('[data-role="del"]').addEventListener('click', (e)=>{
@@ -2618,7 +2658,7 @@
     detailsPanel.classList.remove('open');
     showConfirm('すべてのシーン・付箋・繋がりを削除します。よろしいですか？', ()=>{
       pushHistory();
-      state = { nodes: [], links: [], notes: [], tokens: state.tokens };
+      state = { nodes: [], links: [], notes: [], tokens: state.tokens, currentNodeId: null };
       selectedIds.clear();
       render();
       save();
