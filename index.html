@@ -3135,6 +3135,11 @@
     }
   }, 2000);
 
+  // opening a *different* #view= link while one is already loaded is a same-
+  // document navigation (no reload), so the new hash would otherwise never
+  // get processed -- force a reload so the new snapshot actually renders
+  window.addEventListener('hashchange', ()=> location.reload());
+
   (function startup(){
     if(location.hash.startsWith('#view=')){
       try{
