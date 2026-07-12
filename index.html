@@ -280,6 +280,8 @@
     user-select:none;
     z-index:2;
   }
+  .node.expanded{z-index:6;}
+  .node.last-focused{z-index:8;}
   .node.dragging{box-shadow:0 12px 30px rgba(0,0,0,0.6);z-index:10;}
   .node.selected{outline:2px solid var(--brass);outline-offset:2px;box-shadow:0 0 0 4px rgba(184,148,79,0.18), 0 6px 18px rgba(0,0,0,0.45);}
   .node.token-drop-hover{outline:2px dashed var(--brass);outline-offset:3px;}
@@ -816,6 +818,7 @@
   let pinchState = null;    // {startDist, startScale, worldMid, midClientX, midClientY}
   let minimapDragging = false;
   const selectedIds = new Set(); // ephemeral multi-select (ctrl/cmd+click), not persisted
+  let lastFocusedNodeId = null; // most recently expanded node -- rendered above other nodes
   const uid = () => 'n' + Math.random().toString(36).slice(2,10);
   const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
 
@@ -1796,6 +1799,7 @@
     };
     pushHistory();
     state.nodes.push(n);
+    lastFocusedNodeId = n.id;
     render();
     save();
     setTimeout(()=>{
@@ -2311,7 +2315,7 @@
     state.nodes.forEach(n=>{
       const t = typeOf(n.type);
       const el = document.createElement('div');
-      el.className = 'node type-' + n.type + (selectedIds.has(n.id) ? ' selected' : '') + (state.currentNodeId === n.id ? ' is-current' : '');
+      el.className = 'node type-' + n.type + (selectedIds.has(n.id) ? ' selected' : '') + (state.currentNodeId === n.id ? ' is-current' : '') + (!n.collapsed ? ' expanded' : '') + (n.id === lastFocusedNodeId ? ' last-focused' : '');
       el.setAttribute('data-node-id', n.id);
       el.style.left = n.x+'px';
       el.style.top = n.y+'px';
@@ -2434,6 +2438,7 @@
         collapsedBodyEl.addEventListener('click', (e)=>{
           e.stopPropagation();
           n.collapsed = false;
+          lastFocusedNodeId = n.id;
           render(); save(); applyViewport();
         });
       }
@@ -3158,6 +3163,7 @@
           links: parsed.links,
           notes: Array.isArray(parsed.notes) ? parsed.notes : [],
           tokens: Array.isArray(parsed.tokens) ? parsed.tokens : [],
+          currentNodeId: parsed.currentNodeId || null,
         };
         selectedIds.clear();
         render();
