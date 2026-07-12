@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scene-map-cache-v1';
+const CACHE_NAME = 'scene-map-cache-v2';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -34,10 +34,13 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   // app-shell navigations: try network first, fall back to cached index.html so
-  // the app still opens (and works) with no connection
+  // the app still opens (and works) with no connection.
+  // cache:'no-store' bypasses the browser's own HTTP cache (GitHub Pages serves
+  // index.html with a 10-minute max-age) so a fresh deploy shows up immediately
+  // instead of silently re-caching a stale copy for up to 10 more minutes.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((res) => {
           caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', res.clone()));
           return res;
