@@ -290,6 +290,16 @@
     touch-action:none;
   }
   .node-head:active{cursor:grabbing;}
+  .node-head.viewer-head{cursor:default;}
+  .node-title.viewer-title{cursor:default;flex:1;}
+  .current-badge{
+    flex:0 0 auto;font-size:9px;color:var(--void);background:var(--brass);
+    padding:2px 6px;border-radius:8px;font-weight:700;letter-spacing:0.04em;
+  }
+  .viewer-banner{
+    font-size:12px;color:var(--brass);letter-spacing:0.04em;white-space:nowrap;
+    padding:6px 10px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;
+  }
   .type-dot{
     width:10px;height:10px;border-radius:50%;flex:0 0 auto;cursor:pointer;
     border:1px solid rgba(0,0,0,0.3);
@@ -689,6 +699,11 @@
           </div>
         </div>
         <div class="details-section">
+          <h3>閲覧専用リンク（このプロジェクト）</h3>
+          <button class="fullwidth" id="shareLinkBtn">共有リンクを作成</button>
+          <div class="hint" style="margin-top:8px;">シーンの分岐・条件・現在地だけが見える、編集できないリンクを作れます。プレイヤーや共同GMとの共有に。</div>
+        </div>
+        <div class="details-section">
           <h3>ツール</h3>
           <div style="display:flex;gap:8px;margin-bottom:8px;">
             <button id="undoBtn" style="flex:1;">↺ 元に戻す</button>
@@ -764,6 +779,7 @@
   let projects = [];        // [{id, name, updatedAt}]
   let activeProjectId = null;
   let state = { nodes: [], links: [], notes: [], tokens: [], currentNodeId: null };
+  let viewerMode = false; // read-only shared view (loaded from a #view= link)
   let history = [];        // undo stack (state snapshots)
   let future = [];         // redo stack
   let dragging = null;      // {id, grabDX, grabDY}
@@ -1737,6 +1753,12 @@
   function nodeCenter(n, side){
     const w = nodeWidth();
     const headH = 34;
+    if(viewerMode){
+      // the viewer-mode node template is just the header row -- no body sections
+      if(side==='right') return { x: n.x + w, y: n.y + headH/2 };
+      if(side==='left') return { x: n.x, y: n.y + headH/2 };
+      return { x: n.x + w/2, y: n.y + headH/2 };
+    }
     const bodyH = Math.max(40, 20 + Math.ceil((n.text||'').length/22)*16);
     const starH = n.type === 'ending' ? 26 : 0;
     const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? n.tokenIds.length : 0;
@@ -2094,6 +2116,19 @@
       el.style.top = n.y+'px';
       el.style.borderLeftColor = t.color;
 
+      if(viewerMode){
+        el.innerHTML = `
+          <div class="node-head viewer-head">
+            <span class="type-dot" style="background:${t.color}"></span>
+            ${n.type==='choice' ? '<span class="branch-badge">◆</span>' : ''}
+            <div class="node-title viewer-title">${escapeHtml(n.title || '(無題)')}</div>
+            ${state.currentNodeId === n.id ? '<span class="current-badge">現在地</span>' : ''}
+          </div>
+        `;
+        canvas.appendChild(el);
+        return;
+      }
+
       const starsHtml = n.type === 'ending' ? `
         <div class="star-row" data-role="starrow">
           ${[1,2,3,4,5].map(s=>`<span class="star${s<=(n.stars||0)?' filled':''}" data-role="star" data-val="${s}">★</span>`).join('')}
@@ -2403,14 +2438,20 @@
       star.setAttribute('class','starpoint');
       linksGroup.appendChild(star);
 
-      // editable condition label (positioned in world coords, inside transformed .canvas)
+      // condition label (positioned in world coords, inside transformed .canvas)
+      // -- editable in the normal app, read-only in a shared viewer link
       const labelEl = document.createElement('div');
       labelEl.className = 'link-label';
-      labelEl.contentEditable = 'true';
       labelEl.spellcheck = false;
       labelEl.textContent = l.label || '';
       labelEl.style.left = midx+'px';
       labelEl.style.top = (midy-16)+'px';
+      if(viewerMode){
+        labelEl.style.cursor = 'default';
+        canvas.appendChild(labelEl);
+        return;
+      }
+      labelEl.contentEditable = 'true';
       labelEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
       labelEl.addEventListener('focus', ()=>{ labelEl.dataset.before = l.label || ''; });
       labelEl.addEventListener('blur', ()=>{
@@ -2682,6 +2723,95 @@
     return (name || 'シナリオ').replace(/[\\/:*?"<>|]/g, '_');
   }
 
+  /* ---- read-only share links: encode a stripped-down snapshot (titles,
+     branch conditions, current-location marker only -- no memo/stats/tokens)
+     into the URL hash, so opening it renders a view-only flowchart instead
+     of loading the editor ---- */
+  function encodeShareData(obj){
+    const json = JSON.stringify(obj);
+    const bytes = new TextEncoder().encode(json);
+    let binary = '';
+    bytes.forEach(b => { binary += String.fromCharCode(b); });
+    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+
+  function decodeShareData(str){
+    const b64 = str.replace(/-/g,'+').replace(/_/g,'/');
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  function buildShareSnapshot(){
+    const proj = currentProject();
+    return {
+      v: 1,
+      projectName: proj ? proj.name : '',
+      nodes: state.nodes.map(n=>({ id:n.id, title:n.title, type:n.type, x:n.x, y:n.y })),
+      links: state.links.map(l=>({ id:l.id, from:l.from, to:l.to, label:l.label })),
+      currentNodeId: state.currentNodeId || null,
+    };
+  }
+
+  function showShareLinkModal(){
+    const snapshot = buildShareSnapshot();
+    const encoded = encodeShareData(snapshot);
+    const url = `${location.origin}${location.pathname}#view=${encoded}`;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box wide">
+        <p>このリンクを開くと、シーンのタイトル・分岐条件・現在地だけが見える閲覧専用の画面が表示されます（編集や駒・メモの内容は見えません）。</p>
+        <textarea readonly spellcheck="false">${escapeHtml(url)}</textarea>
+        <div class="modal-actions">
+          <button data-role="close">閉じる</button>
+          <button class="confirm" data-role="copy">コピー</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const ta = overlay.querySelector('textarea');
+    const close = ()=> overlay.remove();
+    overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
+    overlay.querySelector('[data-role="close"]').addEventListener('click', close);
+    const copyBtn = overlay.querySelector('[data-role="copy"]');
+    copyBtn.addEventListener('click', async ()=>{
+      ta.focus(); ta.select();
+      try{ document.execCommand('copy'); }catch(e){ /* ignore */ }
+      try{ await navigator.clipboard.writeText(url); }catch(e){ /* ignore */ }
+      copyBtn.textContent = 'コピーしました';
+      setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
+    });
+    setTimeout(()=>{ ta.focus(); ta.select(); }, 30);
+  }
+
+  function enterViewerMode(snapshot){
+    viewerMode = true;
+    state = {
+      nodes: (snapshot.nodes||[]).map(n=>({
+        id:n.id, x:n.x, y:n.y, title:n.title, type:n.type,
+        text:'', enemyStats:'', tokenIds:[], clues:[], linkTo:null, stars:0,
+      })),
+      links: snapshot.links||[],
+      notes: [],
+      tokens: [],
+      currentNodeId: snapshot.currentNodeId || null,
+    };
+    document.getElementById('toolbarScroll').style.display = 'none';
+    tokensBtn.style.display = 'none';
+    detailsBtn.style.display = 'none';
+    projectBtn.style.display = 'none';
+    const banner = document.createElement('span');
+    banner.className = 'viewer-banner';
+    banner.textContent = `閲覧専用: ${snapshot.projectName || 'シナリオ'}`;
+    document.querySelector('.header-right').prepend(banner);
+    emptyHint.remove();
+    render();
+    applyViewport();
+    fitView();
+  }
+
   function showCcfoliaCopyModal(json, tokenName){
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -2901,6 +3031,7 @@
 
   document.getElementById('exportAllBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showExportAllModal(); });
   document.getElementById('importAllBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showImportAllModal(); });
+  document.getElementById('shareLinkBtn').addEventListener('click', ()=>{ detailsPanel.classList.remove('open'); showShareLinkModal(); });
 
   /* ---- auto layout: arrange nodes into columns following link direction ---- */
   function autoLayout(){
@@ -3009,7 +3140,16 @@
     }
   }, 2000);
 
-  load();
+  (function startup(){
+    if(location.hash.startsWith('#view=')){
+      try{
+        const snapshot = decodeShareData(location.hash.slice('#view='.length));
+        enterViewerMode(snapshot);
+        return;
+      }catch(e){ /* malformed/corrupt link -- fall back to the normal editor */ }
+    }
+    load();
+  })();
 })();
 </script>
 <script>
