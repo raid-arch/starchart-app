@@ -1201,7 +1201,7 @@
      spot to adjust. */
   function parseSkillRolls(skillsText){
     if(!skillsText) return [];
-    return [...skillsText.matchAll(/([^\d\s、,]+)\s*(\d+)/g)].map(m => `CC<=${m[2]} ${m[1]}`);
+    return [...skillsText.matchAll(/([^\d\s、,]+)\s*(\d+)/g)].map(m => `CCB<=${m[2]} 【${m[1]}】`);
   }
 
   function buildCcfoliaCharacter(t, edition){
@@ -1220,17 +1220,35 @@
       params.push({ label: 'ビルド', value: String(d.build) });
       params.push({ label: 'MOV', value: String(d.mov) });
     }
+
+    const commands = ['1d100<={SAN} 【正気度ロール】'];
+    if(edition === '6th'){
+      commands.push('CCB<={INT}*5 【アイデア】');
+      commands.push('CCB<={POW}*5 【幸運】');
+      commands.push('CCB<={EDU}*5 【知識】');
+    }
+    commands.push(...parseSkillRolls(t.skills));
+    const dbSuffix = (d.db && d.db !== '0') ? d.db : '';
+    commands.push(`1D3${dbSuffix} 【こぶし】`);
+    commands.push(`1D4${dbSuffix} 【頭突き】`);
+    commands.push(`1D6${dbSuffix} 【キック】`);
+    TOKEN_CHAR_FIELDS.forEach(([key,label])=>{
+      if(!t[key]) return;
+      const formula = edition === '6th' ? `{${label}}*5` : `{${label}}`;
+      const rollLabel = edition === '6th' ? `${label} × 5` : label;
+      commands.push(`CCB<=${formula} 【${rollLabel}】`);
+    });
+
     return {
       kind: 'character',
       data: {
         name: t.name || '(名称未設定の駒)',
-        memo: '',
-        initiative: 0,
+        initiative: numOr0(t.dex),
         externalUrl: '',
         iconUrl: '',
         status,
         params,
-        commands: parseSkillRolls(t.skills).join('\n'),
+        commands: commands.join('\n'),
       },
     };
   }
