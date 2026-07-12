@@ -333,6 +333,33 @@
   }
   .star-row .star.filled{color:var(--brass);}
 
+  .node-add-clue{
+    flex:0 0 auto;width:16px;height:16px;line-height:14px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;border:1px solid var(--line);
+  }
+  .node-add-clue:hover{color:var(--brass);border-color:var(--brass);}
+
+  .clue-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .clue-item{background:rgba(0,0,0,0.15);border-left:2px solid var(--star);border-radius:2px;padding:6px 8px;}
+  .clue-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+  .clue-condition{
+    flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:2px;
+    color:var(--star);font-size:11px;padding:3px 6px;
+  }
+  .clue-condition:focus{border-color:var(--star);outline:none;}
+  .clue-condition::placeholder{color:#5c5870;}
+  .clue-del{
+    flex:0 0 auto;width:16px;height:16px;line-height:14px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;
+  }
+  .clue-del:hover{color:var(--blood);}
+  .clue-content{
+    font-size:12px;line-height:1.5;color:var(--ink-dim);outline:none;
+    min-height:18px;white-space:pre-wrap;overflow-wrap:break-word;
+  }
+  .clue-content:empty:before{content:attr(data-placeholder);color:#5c5870;}
+  .clue-content:focus{color:var(--ink);}
+
   .enemy-stats{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .enemy-stats-label{font-size:10px;color:var(--blood);letter-spacing:0.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
   .enemy-stats-text{
@@ -555,6 +582,8 @@
   @media (pointer: coarse){
     .node-head{ gap:5px; }
     .type-dot{ width:18px; height:18px; }
+    .node-add-clue{ width:22px; height:22px; line-height:20px; font-size:14px; }
+    .clue-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
     .node-rename{ width:24px; height:24px; line-height:22px; font-size:13px; }
     .node-dup{ width:24px; height:24px; line-height:22px; font-size:13px; }
     .node-del{ width:24px; height:24px; line-height:22px; font-size:15px; }
@@ -1536,7 +1565,7 @@
     }
     const n = {
       id: uid(), x: px, y: py, title: '', text: '',
-      type: t, stars: t === 'ending' ? 3 : 0, linkTo: null, enemyStats: '', tokenIds: [],
+      type: t, stars: t === 'ending' ? 3 : 0, linkTo: null, enemyStats: '', tokenIds: [], clues: [],
     };
     pushHistory();
     state.nodes.push(n);
@@ -1546,6 +1575,26 @@
       const el = canvas.querySelector(`[data-node-id="${n.id}"] .node-title`);
       if(el){ el.focus(); }
     }, 30);
+  }
+
+  function addClueToNode(n){
+    pushHistory();
+    if(!Array.isArray(n.clues)) n.clues = [];
+    const clue = { id: uid(), condition: '', content: '' };
+    n.clues.push(clue);
+    render();
+    save();
+    setTimeout(()=>{
+      const el = canvas.querySelector(`[data-node-id="${n.id}"] [data-clue-id="${clue.id}"] [data-role="clue-condition"]`);
+      if(el) el.focus();
+    }, 30);
+  }
+
+  function deleteClueFromNode(n, clueId){
+    pushHistory();
+    n.clues = (n.clues||[]).filter(c=>c.id!==clueId);
+    render();
+    save();
   }
 
   function deleteNode(id){
@@ -1569,7 +1618,11 @@
     const src = state.nodes.find(n=>n.id===id);
     if(!src) return;
     pushHistory();
-    const copy = { ...src, id: uid(), x: src.x + 28, y: src.y + 28, tokenIds: [...(src.tokenIds||[])] };
+    const copy = {
+      ...src, id: uid(), x: src.x + 28, y: src.y + 28,
+      tokenIds: [...(src.tokenIds||[])],
+      clues: (src.clues||[]).map(c=>({...c, id: uid()})),
+    };
     state.nodes.push(copy);
     render();
     save();
@@ -1664,8 +1717,9 @@
     const starH = n.type === 'ending' ? 26 : 0;
     const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? n.tokenIds.length : 0;
     const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
+    const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
     const linkH = 26;
-    const h = headH + bodyH + starH + enemyH + linkH;
+    const h = headH + bodyH + starH + clueH + enemyH + linkH;
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
     return { x: n.x + w/2, y: n.y + h/2 };
@@ -2045,9 +2099,22 @@
           ${linkTarget ? '<span class="link-clear" data-role="linkclear" title="リンク解除">×</span>' : ''}
         </div>`;
 
+      const cluesHtml = (n.clues && n.clues.length) ? `
+        <div class="clue-list">
+          ${n.clues.map(c => `
+            <div class="clue-item" data-clue-id="${c.id}">
+              <div class="clue-row">
+                <input type="text" class="clue-condition" data-role="clue-condition" data-clue-id="${c.id}" placeholder="発見条件（例: 目星50）" value="${escapeHtml(c.condition||'')}" />
+                <span class="clue-del" data-role="clue-del" data-clue-id="${c.id}" title="削除">×</span>
+              </div>
+              <div class="clue-content" contenteditable="true" spellcheck="false" data-role="clue-content" data-clue-id="${c.id}" data-placeholder="手がかりの内容...">${escapeHtml(c.content||'')}</div>
+            </div>`).join('')}
+        </div>` : '';
+
       el.innerHTML = `
         <div class="node-head">
           <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
+          <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
           ${n.type==='choice' ? '<span class="branch-badge">◆</span>' : ''}
           <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
           <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
@@ -2056,6 +2123,7 @@
         </div>
         <div class="node-body">
           <div class="node-text" contenteditable="true" spellcheck="false" data-role="text">${escapeHtml(n.text)}</div>
+          ${cluesHtml}
           ${starsHtml}
           ${enemyStatsHtml}
           ${linkHtml}
@@ -2067,7 +2135,7 @@
       // drag node by header (pointer events: mouse + touch)
       const head = el.querySelector('.node-head');
       head.addEventListener('pointerdown', (e)=>{
-        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename') return;
+        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addclue') return;
         if(e.ctrlKey || e.metaKey){
           e.stopPropagation();
           e.preventDefault();
@@ -2127,12 +2195,50 @@
         document.execCommand('selectAll', false, null);
       });
 
+      el.querySelector('[data-role="addclue"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        addClueToNode(n);
+      });
+
       const textEl = el.querySelector('[data-role="text"]');
       textEl.addEventListener('focus', ()=>{ textEl.dataset.before = n.text; });
       textEl.addEventListener('blur', ()=>{
         const val = textEl.textContent.trim();
         if(val !== textEl.dataset.before) pushHistory();
         n.text = val; save(); render(); applyViewport();
+      });
+
+      el.querySelectorAll('[data-role="clue-condition"]').forEach(inputEl=>{
+        const clueId = inputEl.dataset.clueId;
+        inputEl.addEventListener('focus', ()=>{ inputEl.dataset.before = inputEl.value; });
+        inputEl.addEventListener('blur', ()=>{
+          const val = inputEl.value.trim();
+          const clue = (n.clues||[]).find(c=>c.id===clueId);
+          if(clue){
+            if(val !== inputEl.dataset.before) pushHistory();
+            clue.condition = val; save();
+          }
+        });
+        inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); inputEl.blur(); } });
+        inputEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+      });
+      el.querySelectorAll('[data-role="clue-content"]').forEach(contentEl=>{
+        const clueId = contentEl.dataset.clueId;
+        contentEl.addEventListener('focus', ()=>{ contentEl.dataset.before = contentEl.textContent; });
+        contentEl.addEventListener('blur', ()=>{
+          const val = contentEl.textContent.trim();
+          const clue = (n.clues||[]).find(c=>c.id===clueId);
+          if(clue){
+            if(val !== contentEl.dataset.before) pushHistory();
+            clue.content = val; save(); render(); applyViewport();
+          }
+        });
+      });
+      el.querySelectorAll('[data-role="clue-del"]').forEach(delEl=>{
+        delEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          deleteClueFromNode(n, delEl.dataset.clueId);
+        });
       });
 
       const enemyStatsEl = el.querySelector('[data-role="enemystats"]');
