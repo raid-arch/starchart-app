@@ -2512,7 +2512,23 @@
 <script>
   if('serviceWorker' in navigator){
     window.addEventListener('load', ()=>{
-      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+      navigator.serviceWorker.register('./sw.js').then((reg) => {
+        // re-check for a new version whenever the app is brought back to the
+        // foreground (opened from the home screen, switched back to, etc.)
+        document.addEventListener('visibilitychange', () => {
+          if(document.visibilityState === 'visible') reg.update();
+        });
+      }).catch(()=>{});
+    });
+
+    // once a new service worker takes over, the page it's controlling is
+    // still running old code -- reload once, automatically, so a fresh
+    // deploy shows up without the user needing to manually refresh twice
+    let swRefreshed = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if(swRefreshed) return;
+      swRefreshed = true;
+      window.location.reload();
     });
   }
 </script>
