@@ -573,10 +573,6 @@
     color:var(--ink);font-size:12px;padding:6px 8px;font-family:inherit;
   }
   .settings-input:focus{border-color:var(--brass);outline:none;}
-  .ai-response{
-    white-space:pre-wrap;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;
-    padding:10px;font-size:12.5px;line-height:1.6;max-height:300px;overflow-y:auto;margin-bottom:10px;
-  }
   .modal-box textarea{
     width:100%;box-sizing:border-box;height:220px;resize:vertical;
     background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:3px;
@@ -689,7 +685,7 @@
     <div class="toolbar-scroll" id="toolbarScroll">
       <button class="primary" id="addBtn">＋ シーン</button>
       <button id="addNoteBtn">＋ 付箋</button>
-      <button id="aiAssistBtn" title="シナリオ全体、または選択したノードについてAIに相談">✨ AIに相談</button>
+      <button id="copyForClaudeBtn" title="シナリオ全体、または選択したノードをClaudeに相談しやすい形でコピー">📋 Claude用にコピー</button>
     </div>
     <button class="details-toggle" id="tokensBtn" title="駒（NPC/モンスター）を作成・管理">
       駒
@@ -738,41 +734,6 @@
             <button id="exportAllBtn" style="flex:1;">全て書き出し</button>
             <button id="importAllBtn" style="flex:1;">全て読み込み</button>
           </div>
-        </div>
-        <div class="details-section">
-          <h3>AIアシスト（試験的・自分のAPIキーを使用）</h3>
-          <div class="ai-settings-row">
-            <label>プロバイダ</label>
-            <select id="aiProviderSelect" class="settings-input">
-              <option value="gemini">Gemini</option>
-              <option value="claude">Claude</option>
-            </select>
-          </div>
-          <div class="ai-settings-row">
-            <label>Gemini APIキー</label>
-            <input type="password" id="geminiKeyInput" class="settings-input" placeholder="AIza..." autocomplete="off" spellcheck="false" />
-          </div>
-          <div class="ai-settings-row">
-            <label>Geminiモデル名</label>
-            <input type="text" id="geminiModelInput" class="settings-input" placeholder="gemini-2.5-flash" autocomplete="off" spellcheck="false" />
-          </div>
-          <div class="ai-settings-row">
-            <label>Claude APIキー</label>
-            <input type="password" id="claudeKeyInput" class="settings-input" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" />
-          </div>
-          <div class="ai-settings-row">
-            <label>Claudeモデル</label>
-            <select id="claudeModelSelect" class="settings-input">
-              <option value="claude-haiku-4-5">Haiku 4.5（安い・軽い相談向け）</option>
-              <option value="claude-sonnet-5">Sonnet 5（質重視）</option>
-            </select>
-          </div>
-          <div class="ai-settings-row">
-            <label>Claude 1日の上限回数</label>
-            <input type="number" id="claudeLimitInput" class="settings-input" min="1" max="500" />
-          </div>
-          <div class="hint" id="claudeUsageHint" style="margin-top:2px;"></div>
-          <div class="hint" style="margin-top:8px;">APIキーはこの端末のブラウザにだけ保存され、各プロバイダのAPIへの直接通信にのみ使われます（他のサーバーには送信されません）。ノードを開いた状態の「✨ AIに相談」から使えます。</div>
         </div>
         <div class="details-section">
           <h3>閲覧専用リンク（このプロジェクト）</h3>
@@ -1325,131 +1286,10 @@
     document.getElementById('driveDownloadBtn').addEventListener('click', driveDownload);
   }
 
-  /* ---- AI assist (bring-your-own-key; Gemini or Claude, chosen per project-wide setting) ----
-     Keys and the daily Claude counter live only in this browser's localStorage;
-     both providers are called directly from the client with no server in between. */
-  const AI_SETTINGS_KEY = 'scene-map-ai-settings-v1';
-  const CLAUDE_USAGE_KEY = 'scene-map-claude-usage-v1';
-
-  function loadAiSettings(){
-    try{
-      const raw = localStorage.getItem(AI_SETTINGS_KEY);
-      const parsed = raw ? JSON.parse(raw) : null;
-      return {
-        provider: (parsed && parsed.provider) || 'gemini',
-        geminiKey: (parsed && parsed.geminiKey) || '',
-        geminiModel: (parsed && parsed.geminiModel) || 'gemini-2.5-flash',
-        claudeKey: (parsed && parsed.claudeKey) || '',
-        claudeModel: (parsed && parsed.claudeModel) || 'claude-haiku-4-5',
-        claudeDailyLimit: (parsed && parsed.claudeDailyLimit) || 20,
-      };
-    }catch(e){
-      return { provider: 'gemini', geminiKey: '', geminiModel: 'gemini-2.5-flash', claudeKey: '', claudeModel: 'claude-haiku-4-5', claudeDailyLimit: 20 };
-    }
-  }
-  function saveAiSettings(){ localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(aiSettings)); }
-  let aiSettings = loadAiSettings();
-
-  function todayStr(){
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }
-  function claudeUsageToday(){
-    try{
-      const raw = localStorage.getItem(CLAUDE_USAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : null;
-      return (parsed && parsed.date === todayStr()) ? parsed.count : 0;
-    }catch(e){ return 0; }
-  }
-  function incrementClaudeUsage(){
-    localStorage.setItem(CLAUDE_USAGE_KEY, JSON.stringify({ date: todayStr(), count: claudeUsageToday() + 1 }));
-  }
-  function claudeRemaining(){ return Math.max(0, aiSettings.claudeDailyLimit - claudeUsageToday()); }
-
-  function updateClaudeUsageHint(){
-    const el = document.getElementById('claudeUsageHint');
-    if(el) el.textContent = `Claude使用時の残り回数（本日）：${claudeRemaining()} / ${aiSettings.claudeDailyLimit}`;
-  }
-
-  function initAiSettingsUI(){
-    const providerSelect = document.getElementById('aiProviderSelect');
-    if(!providerSelect) return;
-    const geminiKeyInput = document.getElementById('geminiKeyInput');
-    const geminiModelInput = document.getElementById('geminiModelInput');
-    const claudeKeyInput = document.getElementById('claudeKeyInput');
-    const claudeModelSelect = document.getElementById('claudeModelSelect');
-    const claudeLimitInput = document.getElementById('claudeLimitInput');
-
-    providerSelect.value = aiSettings.provider;
-    geminiKeyInput.value = aiSettings.geminiKey;
-    geminiModelInput.value = aiSettings.geminiModel;
-    claudeKeyInput.value = aiSettings.claudeKey;
-    claudeModelSelect.value = aiSettings.claudeModel;
-    claudeLimitInput.value = aiSettings.claudeDailyLimit;
-    updateClaudeUsageHint();
-
-    const persist = ()=>{
-      aiSettings = {
-        provider: providerSelect.value,
-        geminiKey: geminiKeyInput.value.trim(),
-        geminiModel: geminiModelInput.value.trim() || 'gemini-2.5-flash',
-        claudeKey: claudeKeyInput.value.trim(),
-        claudeModel: claudeModelSelect.value,
-        claudeDailyLimit: Math.max(1, parseInt(claudeLimitInput.value, 10) || 20),
-      };
-      saveAiSettings();
-      updateClaudeUsageHint();
-    };
-    providerSelect.addEventListener('change', persist);
-    geminiKeyInput.addEventListener('blur', persist);
-    geminiModelInput.addEventListener('blur', persist);
-    claudeKeyInput.addEventListener('blur', persist);
-    claudeModelSelect.addEventListener('change', persist);
-    claudeLimitInput.addEventListener('blur', persist);
-  }
-
-  async function callGemini(prompt){
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(aiSettings.geminiModel)}:generateContent?key=${encodeURIComponent(aiSettings.geminiKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    });
-    if(!res.ok){
-      const errText = await res.text().catch(()=> '');
-      throw new Error(`Gemini APIエラー（${res.status}）${errText.slice(0,150)}`);
-    }
-    const data = await res.json();
-    const cand = data && data.candidates && data.candidates[0];
-    const text = cand && cand.content && cand.content.parts ? cand.content.parts.map(p=>p.text||'').join('') : '';
-    if(!text) throw new Error('応答を取得できませんでした（安全フィルタ等でブロックされた可能性があります）');
-    return text;
-  }
-
-  async function callClaude(prompt){
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': aiSettings.claudeKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: aiSettings.claudeModel,
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    if(!res.ok){
-      const errText = await res.text().catch(()=> '');
-      throw new Error(`Claude APIエラー（${res.status}）${errText.slice(0,150)}`);
-    }
-    const data = await res.json();
-    const text = (data.content || []).filter(b=>b.type==='text').map(b=>b.text).join('');
-    if(!text) throw new Error('応答を取得できませんでした');
-    return text;
-  }
-
+  /* ---- copy-for-chat helper (no API calls, no keys) ----
+     Builds a plain-text summary of the project (or just the selected nodes)
+     formatted to paste straight into a chat with Claude -- avoids the cost/
+     billing/CORS mess of calling any AI API directly from the client. */
   function describeNodeForAi(n){
     const lines = [`---`, `[${n.type}] ${n.title || '(無題)'}`];
     if(n.text) lines.push(n.text);
@@ -1487,15 +1327,16 @@
     return lines.join('\n');
   }
 
-  function openAiAssistModal(){
-    const providerLabel = aiSettings.provider === 'claude' ? 'Claude' : 'Gemini';
+  function openCopyForClaudeModal(){
     const hasSelection = selectedIds.size > 0;
     let scope = hasSelection ? 'selected' : 'project';
+    const buildText = ()=> scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>シナリオについてAIに相談します（${providerLabel}使用）。</p>
+        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。</p>
         ${hasSelection ? `
         <div class="ai-settings-row" style="margin-bottom:10px;">
           <label>対象</label>
@@ -1504,12 +1345,10 @@
             <option value="project">プロジェクト全体（${state.nodes.length}ノード）</option>
           </select>
         </div>` : `<div class="hint" style="margin:-4px 0 10px;">対象: プロジェクト全体（${state.nodes.length}ノード）</div>`}
-        <textarea data-role="prompt" style="height:80px;font-family:inherit;">この後の展開のアイデアを3つ提案して</textarea>
-        <div class="hint" data-role="status" style="margin:-4px 0 10px;"></div>
-        <div class="ai-response" data-role="response" style="display:none;"></div>
+        <textarea readonly spellcheck="false" data-role="text" style="height:260px;">${escapeHtml(buildText())}</textarea>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
-          <button class="confirm" data-role="send">送信</button>
+          <button class="confirm" data-role="copy">コピー</button>
         </div>
       </div>
     `;
@@ -1518,50 +1357,21 @@
     overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
     overlay.querySelector('[data-role="close"]').addEventListener('click', close);
 
+    const ta = overlay.querySelector('[data-role="text"]');
     const scopeSelect = overlay.querySelector('[data-role="scope"]');
-    if(scopeSelect) scopeSelect.addEventListener('change', ()=>{ scope = scopeSelect.value; });
-
-    const statusEl = overlay.querySelector('[data-role="status"]');
-    const responseBox = overlay.querySelector('[data-role="response"]');
-    const sendBtn = overlay.querySelector('[data-role="send"]');
-
-    if(aiSettings.provider === 'claude'){
-      statusEl.textContent = `残り回数（本日）：${claudeRemaining()} / ${aiSettings.claudeDailyLimit}`;
+    if(scopeSelect){
+      scopeSelect.addEventListener('change', ()=>{
+        scope = scopeSelect.value;
+        ta.value = buildText();
+      });
     }
 
-    sendBtn.addEventListener('click', async ()=>{
-      const question = overlay.querySelector('[data-role="prompt"]').value.trim();
-      if(!question) return;
-      const apiKey = aiSettings.provider === 'claude' ? aiSettings.claudeKey : aiSettings.geminiKey;
-      if(!apiKey){
-        statusEl.textContent = `${providerLabel}のAPIキーが設定されていません（上部「詳細」パネルで設定してください）。`;
-        return;
-      }
-      if(aiSettings.provider === 'claude' && claudeRemaining() <= 0){
-        statusEl.textContent = '本日のClaude使用上限に達しました。「詳細」パネルで上限回数を変更できます。';
-        return;
-      }
-      sendBtn.disabled = true;
-      statusEl.textContent = '問い合わせ中…';
-      responseBox.style.display = 'none';
-      const context = scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
-      const scopeLabel = scope === 'selected' ? '一部のシーン' : 'シナリオ全体';
-      const prompt = `${context}\n\n上記はクトゥルフ神話TRPGシナリオの${scopeLabel}です。次の質問に日本語で答えてください:\n${question}`;
-      try{
-        const answer = aiSettings.provider === 'claude' ? await callClaude(prompt) : await callGemini(prompt);
-        responseBox.textContent = answer;
-        responseBox.style.display = 'block';
-        statusEl.textContent = '';
-        if(aiSettings.provider === 'claude'){
-          incrementClaudeUsage();
-          statusEl.textContent = `残り回数（本日）：${claudeRemaining()} / ${aiSettings.claudeDailyLimit}`;
-          updateClaudeUsageHint();
-        }
-      }catch(e){
-        statusEl.textContent = 'エラー：' + e.message;
-      }finally{
-        sendBtn.disabled = false;
-      }
+    const copyBtn = overlay.querySelector('[data-role="copy"]');
+    copyBtn.addEventListener('click', async ()=>{
+      try{ await navigator.clipboard.writeText(ta.value); }
+      catch(e){ ta.focus(); ta.select(); document.execCommand('copy'); }
+      copyBtn.textContent = 'コピーしました';
+      setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
     });
   }
 
@@ -1649,7 +1459,6 @@
     renderTokenList();
     applyViewport();
     initDriveSync();
-    initAiSettingsUI();
   }
 
   let saveTimer = null;
@@ -2185,7 +1994,7 @@
   }
 
   document.getElementById('addNoteBtn').addEventListener('click', ()=> addNote());
-  document.getElementById('aiAssistBtn').addEventListener('click', ()=> openAiAssistModal());
+  document.getElementById('copyForClaudeBtn').addEventListener('click', ()=> openCopyForClaudeModal());
 
   function renderNotes(){
     canvas.querySelectorAll('.sticky').forEach(el=>el.remove());
