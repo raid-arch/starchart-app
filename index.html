@@ -606,6 +606,34 @@
   }
   .sticky-del:hover{color:#8a3241;}
 
+  .relay{
+    position:absolute;width:18px;height:18px;border-radius:50%;
+    background:var(--panel);border:2px solid var(--brass-dim);
+    cursor:grab;touch-action:none;z-index:2;
+  }
+  .relay:hover{border-color:var(--brass);}
+  .relay.dragging{cursor:grabbing;box-shadow:0 6px 14px rgba(0,0,0,0.5);}
+  .relay-del{
+    position:absolute;top:-8px;right:-8px;width:14px;height:14px;line-height:12px;
+    text-align:center;color:var(--ink-dim);cursor:pointer;font-size:11px;
+    background:var(--panel);border:1px solid var(--line);border-radius:50%;
+    opacity:0;transition:opacity 0.15s;
+  }
+  .relay:hover .relay-del{opacity:1;}
+  .relay-del:hover{color:var(--blood);border-color:var(--blood);}
+  .relay-handle{
+    position:absolute;right:-9px;top:50%;transform:translateY(-50%);
+    width:18px;height:18px;border-radius:50%;
+    cursor:crosshair;touch-action:none;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .relay-handle::after{
+    content:'';width:10px;height:10px;border-radius:50%;
+    background:var(--void);border:2px solid var(--brass);
+  }
+  .relay-handle:hover::after{background:var(--brass);}
+  .relay-handle.active::after{background:var(--blood);border-color:var(--blood);}
+
   ::-webkit-scrollbar{width:10px;height:10px;}
   ::-webkit-scrollbar-track{background:var(--void);}
   ::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;}
@@ -647,6 +675,9 @@
     .link-clear{ width:22px; height:22px; line-height:20px; font-size:12.5px; }
     .link-label{ padding:5px 11px; font-size:11.5px; }
     .sticky-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
+    .relay{ width:24px; height:24px; }
+    .relay-del{ width:22px; height:22px; line-height:20px; font-size:14px; opacity:1; }
+    .relay-handle{ width:26px; height:26px; right:-12px; }
     .project-item-actions span{ width:28px; height:28px; line-height:26px; font-size:14px; }
     .token-drag-handle{ padding:8px 6px; font-size:16px; }
     .token-item-copy{ width:28px; height:28px; line-height:26px; font-size:16px; }
@@ -685,7 +716,11 @@
     <div class="toolbar-scroll" id="toolbarScroll">
       <button class="primary" id="addBtn">＋ シーン</button>
       <button id="addNoteBtn">＋ 付箋</button>
+      <button id="addRelayBtn" title="中継ノードを追加（線を経由させるための点）">＋ 中継点</button>
+      <button id="undoBtn" title="元に戻す">↺</button>
+      <button id="redoBtn" title="やり直す">↻</button>
       <button id="copyForClaudeBtn" title="シナリオ全体、または選択したノードをClaudeに相談しやすい形でコピー">📋 Claude用にコピー</button>
+      <button id="notesPageBtn" title="アイデア・メモをジャンル分けして書けるページ">📝 メモ</button>
     </div>
     <button class="details-toggle" id="tokensBtn" title="駒（NPC/モンスター）を作成・管理">
       駒
@@ -742,10 +777,6 @@
         </div>
         <div class="details-section">
           <h3>ツール</h3>
-          <div style="display:flex;gap:8px;margin-bottom:8px;">
-            <button id="undoBtn" style="flex:1;">↺ 元に戻す</button>
-            <button id="redoBtn" style="flex:1;">↻ やり直す</button>
-          </div>
           <button class="danger fullwidth" id="clearBtn">全消去</button>
         </div>
         <div class="details-section">
@@ -815,7 +846,7 @@
 
   let projects = [];        // [{id, name, updatedAt}]
   let activeProjectId = null;
-  let state = { nodes: [], links: [], notes: [], tokens: [], currentNodeId: null };
+  let state = { nodes: [], links: [], notes: [], relays: [], tokens: [], currentNodeId: null };
   let viewerMode = false; // read-only shared view (loaded from a #view= link)
   let history = [];        // undo stack (state snapshots)
   let future = [];         // redo stack
@@ -1000,6 +1031,7 @@
         if(parsed && Array.isArray(parsed.nodes)){
           if(!Array.isArray(parsed.links)) parsed.links = [];
           if(!Array.isArray(parsed.notes)) parsed.notes = [];
+          if(!Array.isArray(parsed.relays)) parsed.relays = [];
           if(!Array.isArray(parsed.tokens)) parsed.tokens = [];
           if(parsed.currentNodeId === undefined) parsed.currentNodeId = null;
           // migrate the old single-token-per-node shape into a list
@@ -1015,7 +1047,7 @@
         }
       }
     }catch(e){ /* fall through to empty graph */ }
-    return { nodes: [], links: [], notes: [], tokens: [], currentNodeId: null };
+    return { nodes: [], links: [], notes: [], relays: [], tokens: [], currentNodeId: null };
   }
 
   function saveProjectsList(){
@@ -1036,7 +1068,7 @@
 
     // first run: migrate the pre-multi-project single save (if any) into project #1
     const id = uid();
-    let graph = { nodes: [], links: [], notes: [] };
+    let graph = { nodes: [], links: [], notes: [], relays: [] };
     try{
       const legacyRaw = localStorage.getItem(LEGACY_STORE_KEY);
       if(legacyRaw){
@@ -1094,7 +1126,7 @@
     const id = uid();
     const name = 'シナリオ' + (projects.length + 1);
     projects.push({ id, name, updatedAt: Date.now(), edition: '7th' });
-    localStorage.setItem(graphKey(id), JSON.stringify({ nodes: [], links: [], notes: [], tokens: [], currentNodeId: null }));
+    localStorage.setItem(graphKey(id), JSON.stringify({ nodes: [], links: [], notes: [], relays: [], tokens: [], currentNodeId: null }));
     saveProjectsList();
     switchProject(id);
     renderProjectList();
@@ -1993,7 +2025,29 @@
     save();
   }
 
+  function addRelay(x, y){
+    let px = x, py = y;
+    if(px == null || py == null){
+      const rect = canvasWrap.getBoundingClientRect();
+      px = (rect.width/2 - viewport.offsetX) / viewport.scale - RELAY_SIZE/2 + (Math.random()*40-20);
+      py = (rect.height/2 - viewport.offsetY) / viewport.scale - RELAY_SIZE/2 + (Math.random()*40-20);
+    }
+    pushHistory();
+    state.relays.push({ id: uid(), x: px, y: py });
+    render();
+    save();
+  }
+
+  function deleteRelay(id){
+    pushHistory();
+    state.relays = state.relays.filter(x=>x.id!==id);
+    state.links = state.links.filter(l=>l.from!==id && l.to!==id);
+    render();
+    save();
+  }
+
   document.getElementById('addNoteBtn').addEventListener('click', ()=> addNote());
+  document.getElementById('addRelayBtn').addEventListener('click', ()=> addRelay());
   document.getElementById('copyForClaudeBtn').addEventListener('click', ()=> openCopyForClaudeModal());
 
   function renderNotes(){
@@ -2031,6 +2085,46 @@
       el.querySelector('[data-role="notedel"]').addEventListener('click', (e)=>{
         e.stopPropagation();
         deleteNote(note.id);
+      });
+    });
+  }
+
+  function renderRelays(){
+    canvas.querySelectorAll('.relay').forEach(el=>el.remove());
+    if(viewerMode) return; // relays are an authoring aid only, not shown in the read-only viewer
+    state.relays.forEach(relay=>{
+      const el = document.createElement('div');
+      el.className = 'relay';
+      el.setAttribute('data-relay-id', relay.id);
+      el.style.left = relay.x+'px';
+      el.style.top = relay.y+'px';
+      el.title = '中継ノード（線を経由させるための点）';
+      el.innerHTML = `
+        <span class="relay-del" data-role="relaydel" title="削除">×</span>
+        <div class="relay-handle" data-role="relayhandle" title="ドラッグして接続"></div>
+      `;
+      canvas.appendChild(el);
+
+      el.addEventListener('pointerdown', (e)=>{
+        if(e.target.dataset.role==='relaydel' || e.target.dataset.role==='relayhandle') return;
+        const w = screenToWorld(e.clientX, e.clientY);
+        dragging = { id: relay.id, kind: 'relay', grabDX: w.x - relay.x, grabDY: w.y - relay.y, historyPushed: false };
+        el.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      el.querySelector('[data-role="relaydel"]').addEventListener('click', (e)=>{
+        e.stopPropagation();
+        deleteRelay(relay.id);
+      });
+
+      const handle = el.querySelector('[data-role="relayhandle"]');
+      handle.addEventListener('pointerdown', (e)=>{
+        e.stopPropagation();
+        e.preventDefault();
+        const w = screenToWorld(e.clientX, e.clientY);
+        connecting = { fromId: relay.id, x: w.x, y: w.y };
+        handle.classList.add('active');
       });
     });
   }
@@ -2073,6 +2167,32 @@
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
     return { x: n.x + w/2, y: n.y + h/2 };
+  }
+
+  const RELAY_SIZE = 18;
+  function relayCenter(r){
+    return { x: r.x + RELAY_SIZE/2, y: r.y + RELAY_SIZE/2 };
+  }
+
+  /* ---- link endpoints can be a scene node OR a relay (a lightweight pass-through
+     point, same standing as a sticky note) -- these two helpers let drawLinks/
+     drawGhost resolve either kind without caring which one they got. ---- */
+  function anchorPoint(id, side){
+    const n = state.nodes.find(x=>x.id===id);
+    if(n) return nodeCenter(n, side);
+    const r = state.relays.find(x=>x.id===id);
+    if(r) return relayCenter(r);
+    return null;
+  }
+  function anchorX(id){
+    const n = state.nodes.find(x=>x.id===id);
+    if(n) return n.x;
+    const r = state.relays.find(x=>x.id===id);
+    if(r) return r.x;
+    return 0;
+  }
+  function anchorExists(id){
+    return state.nodes.some(x=>x.id===id) || state.relays.some(x=>x.id===id);
   }
 
   function pathBetween(p1, p2){
@@ -2131,14 +2251,14 @@
 
   function fitView(){
     const rect = canvasWrap.getBoundingClientRect();
-    if(!state.nodes.length && !state.notes.length){
+    if(!state.nodes.length && !state.notes.length && !state.relays.length){
       viewport = { scale: 1, offsetX: 80, offsetY: 60 };
       applyViewport();
       return;
     }
     const w = nodeWidth();
-    const xs = state.nodes.map(n=>n.x).concat(state.notes.map(n=>n.x));
-    const ys = state.nodes.map(n=>n.y).concat(state.notes.map(n=>n.y));
+    const xs = state.nodes.map(n=>n.x).concat(state.notes.map(n=>n.x)).concat(state.relays.map(r=>r.x));
+    const ys = state.nodes.map(n=>n.y).concat(state.notes.map(n=>n.y)).concat(state.relays.map(r=>r.y));
     const minX = Math.min(...xs) - 40, minY = Math.min(...ys) - 40;
     const maxX = Math.max(...xs) + w + 40, maxY = Math.max(...ys) + 200;
     const bw = Math.max(1, maxX-minX), bh = Math.max(1, maxY-minY);
@@ -2320,10 +2440,10 @@
     const mmW = minimap.clientWidth, mmH = minimap.clientHeight;
     const PAD = 80;
     let minX=0,minY=0,maxX=1000,maxY=700;
-    if(state.nodes.length || state.notes.length){
+    if(state.nodes.length || state.notes.length || state.relays.length){
       const w = nodeWidth();
-      const xs = state.nodes.map(n=>n.x).concat(state.notes.map(n=>n.x));
-      const ys = state.nodes.map(n=>n.y).concat(state.notes.map(n=>n.y));
+      const xs = state.nodes.map(n=>n.x).concat(state.notes.map(n=>n.x)).concat(state.relays.map(r=>r.x));
+      const ys = state.nodes.map(n=>n.y).concat(state.notes.map(n=>n.y)).concat(state.relays.map(r=>r.y));
       minX = Math.min(...xs) - PAD;
       minY = Math.min(...ys) - PAD;
       maxX = Math.max(...xs) + w + PAD;
@@ -2366,6 +2486,17 @@
       minimap.appendChild(dot);
     });
 
+    state.relays.forEach(relay=>{
+      const dot = document.createElement('div');
+      dot.className = 'minimap-dot';
+      dot.style.left = (offX + (relay.x-minX)*mmScale) + 'px';
+      dot.style.top = (offY + (relay.y-minY)*mmScale) + 'px';
+      dot.style.width = '3px'; dot.style.height='3px';
+      dot.style.borderRadius = '50%';
+      dot.style.background = 'var(--brass-dim)';
+      minimap.appendChild(dot);
+    });
+
     const rect = canvasWrap.getBoundingClientRect();
     const worldViewX = -viewport.offsetX/viewport.scale;
     const worldViewY = -viewport.offsetY/viewport.scale;
@@ -2405,7 +2536,7 @@
   window.addEventListener('resize', ()=>{ applyViewport(); });
 
   function render(){
-    emptyHint.style.display = (state.nodes.length || state.notes.length) ? 'none' : 'block';
+    emptyHint.style.display = (state.nodes.length || state.notes.length || state.relays.length) ? 'none' : 'block';
 
     canvas.querySelectorAll('.node').forEach(el=>el.remove());
     canvas.querySelectorAll('.link-del, .link-label').forEach(el=>el.remove());
@@ -2757,6 +2888,7 @@
     });
 
     renderNotes();
+    renderRelays();
     drawLinks();
     drawMinimap();
   }
@@ -2766,12 +2898,10 @@
     Array.from(canvas.querySelectorAll('.link-del, .link-label')).forEach(el=>el.remove());
 
     state.links.forEach(l=>{
-      const a = state.nodes.find(n=>n.id===l.from);
-      const b = state.nodes.find(n=>n.id===l.to);
-      if(!a || !b) return;
-      const goingRight = a.x <= b.x;
-      const p1 = nodeCenter(a, goingRight ? 'right' : 'left');
-      const p2 = nodeCenter(b, goingRight ? 'left' : 'right');
+      if(!anchorExists(l.from) || !anchorExists(l.to)) return;
+      const goingRight = anchorX(l.from) <= anchorX(l.to);
+      const p1 = anchorPoint(l.from, goingRight ? 'right' : 'left');
+      const p2 = anchorPoint(l.to, goingRight ? 'left' : 'right');
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
       path.setAttribute('d', pathBetween(p1,p2));
       path.setAttribute('class','link');
@@ -2894,6 +3024,16 @@
           if(el){ el.style.left = note.x+'px'; el.style.top = note.y+'px'; }
           drawMinimap();
         }
+      } else if(dragging.kind === 'relay'){
+        const relay = state.relays.find(x=>x.id===dragging.id);
+        if(relay){
+          relay.x = w.x - dragging.grabDX;
+          relay.y = w.y - dragging.grabDY;
+          const el = canvas.querySelector(`[data-relay-id="${relay.id}"]`);
+          if(el){ el.style.left = relay.x+'px'; el.style.top = relay.y+'px'; }
+          drawLinks();
+          drawMinimap();
+        }
       } else if(dragging.group){
         const primary = dragging.group.find(g=>g.id===dragging.id);
         if(primary){
@@ -2938,6 +3078,12 @@
     }
   });
 
+  function dragElementSelector(d){
+    if(d.kind === 'note') return `[data-note-id="${d.id}"]`;
+    if(d.kind === 'relay') return `[data-relay-id="${d.id}"]`;
+    return `[data-node-id="${d.id}"]`;
+  }
+
   function handlePointerEnd(e){
     if(tokenDragging){
       endTokenDrag(e.clientX, e.clientY);
@@ -2956,22 +3102,21 @@
     }
 
     if(dragging){
-      const sel = dragging.kind === 'note' ? `[data-note-id="${dragging.id}"]` : `[data-node-id="${dragging.id}"]`;
-      const el = canvas.querySelector(sel);
+      const el = canvas.querySelector(dragElementSelector(dragging));
       if(el) el.classList.remove('dragging');
       dragging = null;
       save();
     }
     if(connecting){
       const under = document.elementFromPoint(e.clientX, e.clientY);
-      const nodeEl = under ? under.closest('[data-node-id]') : null;
-      if(nodeEl){
-        const targetId = nodeEl.getAttribute('data-node-id');
+      const targetEl = under ? under.closest('[data-node-id], [data-relay-id]') : null;
+      if(targetEl){
+        const targetId = targetEl.getAttribute('data-node-id') || targetEl.getAttribute('data-relay-id');
         if(targetId && targetId !== connecting.fromId){
           addLink(connecting.fromId, targetId);
         }
       }
-      const handleEl = document.querySelector('.connect-handle.active');
+      const handleEl = document.querySelector('.connect-handle.active, .relay-handle.active');
       if(handleEl) handleEl.classList.remove('active');
       removeGhost();
       connecting = null;
@@ -2987,9 +3132,8 @@
   function drawGhost(){
     removeGhost();
     if(!connecting) return;
-    const a = state.nodes.find(n=>n.id===connecting.fromId);
-    if(!a) return;
-    const p1 = nodeCenter(a, 'right');
+    const p1 = anchorPoint(connecting.fromId, 'right');
+    if(!p1) return;
     const p2 = { x: connecting.x, y: connecting.y };
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
     path.setAttribute('d', pathBetween(p1,p2));
@@ -3044,9 +3188,9 @@
   document.getElementById('clearBtn').addEventListener('click', ()=>{
     if(state.nodes.length===0 && state.notes.length===0) return;
     detailsPanel.classList.remove('open');
-    showConfirm('すべてのシーン・付箋・繋がりを削除します。よろしいですか？', ()=>{
+    showConfirm('すべてのシーン・付箋・中継点・繋がりを削除します。よろしいですか？', ()=>{
       pushHistory();
-      state = { nodes: [], links: [], notes: [], tokens: state.tokens, currentNodeId: null };
+      state = { nodes: [], links: [], notes: [], relays: [], tokens: state.tokens, currentNodeId: null };
       selectedIds.clear();
       render();
       save();
@@ -3142,6 +3286,7 @@
       })),
       links: snapshot.links||[],
       notes: [],
+      relays: [],
       tokens: [],
       currentNodeId: snapshot.currentNodeId || null,
     };
@@ -3260,6 +3405,7 @@
           nodes: parsed.nodes,
           links: parsed.links,
           notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+          relays: Array.isArray(parsed.relays) ? parsed.relays : [],
           tokens: Array.isArray(parsed.tokens) ? parsed.tokens : [],
           currentNodeId: parsed.currentNodeId || null,
         };
@@ -3356,6 +3502,7 @@
           nodes: Array.isArray(g.nodes) ? g.nodes : [],
           links: Array.isArray(g.links) ? g.links : [],
           notes: Array.isArray(g.notes) ? g.notes : [],
+          relays: Array.isArray(g.relays) ? g.relays : [],
           tokens: Array.isArray(g.tokens) ? g.tokens : [],
           currentNodeId: g.currentNodeId || null,
         }));
@@ -3470,8 +3617,7 @@
     panState = null;
     canvasWrap.classList.remove('panning');
     if(dragging){
-      const sel = dragging.kind === 'note' ? `[data-note-id="${dragging.id}"]` : `[data-node-id="${dragging.id}"]`;
-      const el = canvas.querySelector(sel);
+      const el = canvas.querySelector(dragElementSelector(dragging));
       if(el) el.classList.remove('dragging');
       dragging = null;
       save();
