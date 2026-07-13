@@ -763,6 +763,7 @@
       <button class="primary" id="addBtn">＋ シーン</button>
       <button id="addNoteBtn">＋ 付箋</button>
       <button id="addRelayBtn" title="中継ノードを追加（線を経由させるための点）">＋ 中継点</button>
+      <button id="nodeSearchBtn" title="シーンをタイトル・本文・手がかりから検索してジャンプ">🔍 検索</button>
       <button id="undoBtn" title="元に戻す">↺</button>
       <button id="redoBtn" title="やり直す">↻</button>
       <button id="copyForClaudeBtn" title="シナリオ全体、または選択したノードをClaudeに相談しやすい形でコピー">📋 Claude用にコピー</button>
@@ -2113,6 +2114,7 @@
   document.getElementById('addNoteBtn').addEventListener('click', ()=> addNote());
   document.getElementById('addRelayBtn').addEventListener('click', ()=> addRelay());
   document.getElementById('copyForClaudeBtn').addEventListener('click', ()=> openCopyForClaudeModal());
+  document.getElementById('nodeSearchBtn').addEventListener('click', (e)=> openNodeSearch(e.currentTarget));
 
   /* ---- notes/ideas page: a free-form scratchpad separate from the scene graph,
      entries tagged with a user-chosen genre/category (not a fixed list). ---- */
@@ -2477,6 +2479,71 @@
       el.classList.add('flash');
       setTimeout(()=>{ el.classList.remove('flash'); }, 2000);
     }
+  }
+
+  /* ---- global node search popover (find a scene by title/text/clue and jump to it) ---- */
+  let searchPickerEl = null;
+  function closeNodeSearch(){
+    if(searchPickerEl){ searchPickerEl.remove(); searchPickerEl = null; }
+    document.removeEventListener('pointerdown', onNodeSearchOutside, true);
+  }
+  function onNodeSearchOutside(e){
+    if(searchPickerEl && !searchPickerEl.contains(e.target)) closeNodeSearch();
+  }
+  function openNodeSearch(anchorEl){
+    closeNodeSearch();
+    const rect = anchorEl.getBoundingClientRect();
+
+    searchPickerEl = document.createElement('div');
+    searchPickerEl.className = 'node-picker';
+    searchPickerEl.innerHTML = `
+      <input type="text" placeholder="タイトル・本文・手がかりで検索..." data-role="search" spellcheck="false" />
+      <div class="picker-list" data-role="list"></div>
+    `;
+    document.body.appendChild(searchPickerEl);
+
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    const pw = 240, ph = Math.min(280, searchPickerEl.scrollHeight || 280);
+    if(left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    if(top + ph > window.innerHeight - 8) top = rect.top - ph - 6;
+    if(top < 8) top = 8;
+    searchPickerEl.style.left = Math.max(8,left) + 'px';
+    searchPickerEl.style.top = top + 'px';
+
+    const listEl = searchPickerEl.querySelector('[data-role="list"]');
+    function matches(n, q){
+      if((n.title||'').toLowerCase().includes(q)) return true;
+      if((n.text||'').toLowerCase().includes(q)) return true;
+      if(Array.isArray(n.clues) && n.clues.some(c => (c.content||'').toLowerCase().includes(q) || (c.condition||'').toLowerCase().includes(q))) return true;
+      return false;
+    }
+    function renderList(filter){
+      const q = (filter||'').trim().toLowerCase();
+      const filtered = q ? state.nodes.filter(n => matches(n, q)) : state.nodes;
+      if(!filtered.length){
+        listEl.innerHTML = `<div class="picker-empty">${state.nodes.length ? '一致するシーンがありません' : 'シーンがありません'}</div>`;
+        return;
+      }
+      listEl.innerHTML = filtered.map(n=>{
+        const t = typeOf(n.type);
+        return `<div class="picker-item" data-id="${n.id}"><span class="pdot" style="background:${t.color}"></span><span>${escapeHtml(n.title || '(無題)')}</span></div>`;
+      }).join('');
+      listEl.querySelectorAll('.picker-item').forEach(itemEl=>{
+        itemEl.addEventListener('click', ()=>{
+          closeNodeSearch();
+          jumpToNode(itemEl.dataset.id);
+        });
+      });
+    }
+    renderList('');
+    const searchEl = searchPickerEl.querySelector('[data-role="search"]');
+    searchEl.addEventListener('input', ()=> renderList(searchEl.value));
+    searchEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+    searchEl.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeNodeSearch(); });
+    setTimeout(()=> searchEl.focus(), 20);
+
+    setTimeout(()=> document.addEventListener('pointerdown', onNodeSearchOutside, true), 20);
   }
 
   /* ---- node picker popover (choose a jump-link target) ---- */
