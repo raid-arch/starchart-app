@@ -767,6 +767,7 @@
       <button id="undoBtn" title="元に戻す">↺</button>
       <button id="redoBtn" title="やり直す">↻</button>
       <button id="copyForClaudeBtn" title="シナリオ全体、または選択したノードをClaudeに相談しやすい形でコピー">📋 Claude用にコピー</button>
+      <button id="geminiAskBtn" title="シナリオ全体、または選択したノードについてGeminiに相談する（要APIキー設定）">✨ Geminiに相談</button>
       <button id="notesPageBtn" title="アイデア・メモをジャンル分けして書けるページ">📝 メモ</button>
     </div>
     <button class="details-toggle" id="tokensBtn" title="駒（NPC/モンスター）を作成・管理">
@@ -906,6 +907,8 @@
   const ACTIVE_PROJECT_KEY = 'scene-map-active-project-v1';
   const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
   const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
+  const GEMINI_KEY_STORAGE = 'scene-map-gemini-key-v1'; // BYOK -- lives only in this browser's localStorage, never sent anywhere but Google's API
+  const GEMINI_MODEL_STORAGE = 'scene-map-gemini-model-v1';
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
   let projects = [];        // [{id, name, updatedAt}]
@@ -1469,6 +1472,128 @@
       catch(e){ ta.focus(); ta.select(); document.execCommand('copy'); }
       copyBtn.textContent = 'コピーしました';
       setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
+    });
+  }
+
+  /* ---- Gemini consultation (bring-your-own-key, calls Google's API directly
+     from the browser -- the key never touches any server of ours) ---- */
+  function loadGeminiKey(){ return localStorage.getItem(GEMINI_KEY_STORAGE) || ''; }
+  function saveGeminiKey(k){ localStorage.setItem(GEMINI_KEY_STORAGE, k); }
+  function loadGeminiModel(){ return localStorage.getItem(GEMINI_MODEL_STORAGE) || 'gemini-3.1-flash-lite'; }
+  function saveGeminiModel(m){ localStorage.setItem(GEMINI_MODEL_STORAGE, m); }
+
+  async function callGemini(apiKey, model, prompt){
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    let res;
+    try{
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+    }catch(e){
+      throw new Error('通信に失敗しました。ネットワーク接続を確認してください。');
+    }
+    const data = await res.json().catch(()=>null);
+    if(!res.ok){
+      let msg = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
+      if(res.status === 429) msg += '（無料枠の上限に達した可能性があります。しばらく待って試してください）';
+      if(res.status === 400 || res.status === 403) msg += '（APIキーが正しいか確認してください）';
+      throw new Error(msg);
+    }
+    const cand = data && data.candidates && data.candidates[0];
+    const text = cand && cand.content && cand.content.parts && cand.content.parts.map(p=>p.text||'').join('');
+    if(!text) throw new Error('空の応答が返ってきました。時間を置いて再試行してください。');
+    return text;
+  }
+
+  function openGeminiModal(){
+    const hasSelection = selectedIds.size > 0;
+    let scope = hasSelection ? 'selected' : 'project';
+    const buildContext = ()=> scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box wide">
+        <p>シナリオの内容をもとにGeminiへ質問できます。APIキーはこのブラウザにだけ保存され、Google以外には送信されません。</p>
+        <div class="ai-settings-row">
+          <label>APIキー</label>
+          <input type="password" data-role="key" class="settings-input" placeholder="AI StudioのAPIキーを貼り付け" value="${escapeHtml(loadGeminiKey())}" />
+        </div>
+        <div class="ai-settings-row">
+          <label>モデル名</label>
+          <input type="text" data-role="model" class="settings-input" value="${escapeHtml(loadGeminiModel())}" />
+        </div>
+        ${hasSelection ? `
+        <div class="ai-settings-row">
+          <label>対象</label>
+          <select data-role="scope" class="settings-input">
+            <option value="selected">選択した${selectedIds.size}個のノードのみ</option>
+            <option value="project">プロジェクト全体（${state.nodes.length}ノード）</option>
+          </select>
+        </div>` : `<div class="hint" style="margin:-4px 0 10px;">対象: プロジェクト全体（${state.nodes.length}ノード）</div>`}
+        <div class="hint">Geminiへの質問・指示:</div>
+        <textarea spellcheck="false" data-role="question" placeholder="例: 次の展開を3パターン考えて／矛盾がないかチェックして" style="height:70px;"></textarea>
+        <div class="hint" data-role="status" style="min-height:16px;"></div>
+        <textarea readonly spellcheck="false" data-role="answer" placeholder="ここに回答が表示されます" style="height:220px;display:none;"></textarea>
+        <div class="modal-actions">
+          <button data-role="close">閉じる</button>
+          <button data-role="copyAnswer" style="display:none;">回答をコピー</button>
+          <button class="confirm" data-role="ask">Geminiに聞く</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=> overlay.remove();
+    overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
+    overlay.querySelector('[data-role="close"]').addEventListener('click', close);
+
+    const keyEl = overlay.querySelector('[data-role="key"]');
+    const modelEl = overlay.querySelector('[data-role="model"]');
+    keyEl.addEventListener('change', ()=> saveGeminiKey(keyEl.value.trim()));
+    modelEl.addEventListener('change', ()=> saveGeminiModel(modelEl.value.trim() || 'gemini-3.1-flash-lite'));
+
+    const scopeSelect = overlay.querySelector('[data-role="scope"]');
+    if(scopeSelect) scopeSelect.addEventListener('change', ()=>{ scope = scopeSelect.value; });
+
+    const questionEl = overlay.querySelector('[data-role="question"]');
+    const statusEl = overlay.querySelector('[data-role="status"]');
+    const answerEl = overlay.querySelector('[data-role="answer"]');
+    const copyAnswerBtn = overlay.querySelector('[data-role="copyAnswer"]');
+    const askBtn = overlay.querySelector('[data-role="ask"]');
+
+    askBtn.addEventListener('click', async ()=>{
+      const apiKey = keyEl.value.trim();
+      const model = modelEl.value.trim() || 'gemini-3.1-flash-lite';
+      if(!apiKey){ statusEl.textContent = 'APIキーを入力してください。'; return; }
+      saveGeminiKey(apiKey);
+      saveGeminiModel(model);
+      const question = questionEl.value.trim() || 'このシナリオについて、気づいた点や改善案を教えてください。';
+      const prompt = `${buildContext()}\n\n---\n質問:\n${question}`;
+
+      askBtn.disabled = true;
+      statusEl.textContent = 'Geminiに問い合わせ中...';
+      answerEl.style.display = 'none';
+      copyAnswerBtn.style.display = 'none';
+      try{
+        const text = await callGemini(apiKey, model, prompt);
+        statusEl.textContent = '';
+        answerEl.value = text;
+        answerEl.style.display = '';
+        copyAnswerBtn.style.display = '';
+      }catch(err){
+        statusEl.textContent = 'エラー: ' + (err && err.message ? err.message : '不明なエラー');
+      }finally{
+        askBtn.disabled = false;
+      }
+    });
+
+    copyAnswerBtn.addEventListener('click', async ()=>{
+      try{ await navigator.clipboard.writeText(answerEl.value); }
+      catch(e){ answerEl.focus(); answerEl.select(); document.execCommand('copy'); }
+      copyAnswerBtn.textContent = 'コピーしました';
+      setTimeout(()=>{ copyAnswerBtn.textContent = '回答をコピー'; }, 1400);
     });
   }
 
@@ -2114,6 +2239,7 @@
   document.getElementById('addNoteBtn').addEventListener('click', ()=> addNote());
   document.getElementById('addRelayBtn').addEventListener('click', ()=> addRelay());
   document.getElementById('copyForClaudeBtn').addEventListener('click', ()=> openCopyForClaudeModal());
+  document.getElementById('geminiAskBtn').addEventListener('click', ()=> openGeminiModal());
   document.getElementById('nodeSearchBtn').addEventListener('click', (e)=> openNodeSearch(e.currentTarget));
 
   /* ---- notes/ideas page: a free-form scratchpad separate from the scene graph,
