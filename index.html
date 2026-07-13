@@ -573,12 +573,6 @@
     color:var(--ink);font-size:12px;padding:6px 8px;font-family:inherit;
   }
   .settings-input:focus{border-color:var(--brass);outline:none;}
-  .ai-assist-row{
-    display:flex;align-items:center;gap:6px;margin-top:8px;padding:7px 9px;
-    border:1px solid var(--line);border-radius:3px;cursor:pointer;
-    font-size:11.5px;color:var(--ink-dim);
-  }
-  .ai-assist-row:hover{border-color:var(--brass);color:var(--brass);}
   .ai-response{
     white-space:pre-wrap;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;
     padding:10px;font-size:12.5px;line-height:1.6;max-height:300px;overflow-y:auto;margin-bottom:10px;
@@ -695,6 +689,7 @@
     <div class="toolbar-scroll" id="toolbarScroll">
       <button class="primary" id="addBtn">＋ シーン</button>
       <button id="addNoteBtn">＋ 付箋</button>
+      <button id="aiAssistBtn" title="シナリオ全体、または選択したノードについてAIに相談">✨ AIに相談</button>
     </div>
     <button class="details-toggle" id="tokensBtn" title="駒（NPC/モンスター）を作成・管理">
       駒
@@ -1455,14 +1450,61 @@
     return text;
   }
 
-  function openAiAssistModal(n){
+  function describeNodeForAi(n){
+    const lines = [`---`, `[${n.type}] ${n.title || '(無題)'}`];
+    if(n.text) lines.push(n.text);
+    (n.clues||[]).forEach(c=> lines.push(`  手がかり(${c.condition||'条件未設定'}): ${c.content||''}`));
+    return lines;
+  }
+
+  function buildProjectAiContext(){
+    const proj = currentProject();
+    const lines = [`プロジェクト名: ${proj ? proj.name : ''}`];
+    state.nodes.forEach(n=> lines.push(...describeNodeForAi(n)));
+    if(state.links.length){
+      lines.push('---', 'シーンのつながり:');
+      state.links.forEach(l=>{
+        const a = state.nodes.find(x=>x.id===l.from);
+        const b = state.nodes.find(x=>x.id===l.to);
+        if(a && b) lines.push(`${a.title||'(無題)'} → ${b.title||'(無題)'}${l.label ? `（条件: ${l.label}）` : ''}`);
+      });
+    }
+    return lines.join('\n');
+  }
+
+  function buildSelectedAiContext(ids){
+    const lines = [];
+    state.nodes.filter(n=>ids.has(n.id)).forEach(n=> lines.push(...describeNodeForAi(n)));
+    const relevantLinks = state.links.filter(l=> ids.has(l.from) && ids.has(l.to));
+    if(relevantLinks.length){
+      lines.push('---', '選択ノード同士のつながり:');
+      relevantLinks.forEach(l=>{
+        const a = state.nodes.find(x=>x.id===l.from);
+        const b = state.nodes.find(x=>x.id===l.to);
+        if(a && b) lines.push(`${a.title||'(無題)'} → ${b.title||'(無題)'}${l.label ? `（条件: ${l.label}）` : ''}`);
+      });
+    }
+    return lines.join('\n');
+  }
+
+  function openAiAssistModal(){
     const providerLabel = aiSettings.provider === 'claude' ? 'Claude' : 'Gemini';
+    const hasSelection = selectedIds.size > 0;
+    let scope = hasSelection ? 'selected' : 'project';
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>「<b>${escapeHtml(n.title || '(無題)')}</b>」についてAIに相談します（${providerLabel}使用）。</p>
-        <textarea id="aiPromptInput" style="height:80px;font-family:inherit;">この後の展開のアイデアを3つ提案して</textarea>
+        <p>シナリオについてAIに相談します（${providerLabel}使用）。</p>
+        ${hasSelection ? `
+        <div class="ai-settings-row" style="margin-bottom:10px;">
+          <label>対象</label>
+          <select data-role="scope" class="settings-input">
+            <option value="selected">選択した${selectedIds.size}個のノードのみ</option>
+            <option value="project">プロジェクト全体（${state.nodes.length}ノード）</option>
+          </select>
+        </div>` : `<div class="hint" style="margin:-4px 0 10px;">対象: プロジェクト全体（${state.nodes.length}ノード）</div>`}
+        <textarea data-role="prompt" style="height:80px;font-family:inherit;">この後の展開のアイデアを3つ提案して</textarea>
         <div class="hint" data-role="status" style="margin:-4px 0 10px;"></div>
         <div class="ai-response" data-role="response" style="display:none;"></div>
         <div class="modal-actions">
@@ -1476,6 +1518,9 @@
     overlay.addEventListener('pointerdown', (e)=>{ if(e.target === overlay) close(); });
     overlay.querySelector('[data-role="close"]').addEventListener('click', close);
 
+    const scopeSelect = overlay.querySelector('[data-role="scope"]');
+    if(scopeSelect) scopeSelect.addEventListener('change', ()=>{ scope = scopeSelect.value; });
+
     const statusEl = overlay.querySelector('[data-role="status"]');
     const responseBox = overlay.querySelector('[data-role="response"]');
     const sendBtn = overlay.querySelector('[data-role="send"]');
@@ -1485,7 +1530,7 @@
     }
 
     sendBtn.addEventListener('click', async ()=>{
-      const question = overlay.querySelector('#aiPromptInput').value.trim();
+      const question = overlay.querySelector('[data-role="prompt"]').value.trim();
       if(!question) return;
       const apiKey = aiSettings.provider === 'claude' ? aiSettings.claudeKey : aiSettings.geminiKey;
       if(!apiKey){
@@ -1499,8 +1544,9 @@
       sendBtn.disabled = true;
       statusEl.textContent = '問い合わせ中…';
       responseBox.style.display = 'none';
-      const context = `シーンタイトル: ${n.title || '(無題)'}\n内容: ${n.text || '(内容なし)'}`;
-      const prompt = `${context}\n\n上記はクトゥルフ神話TRPGシナリオのワンシーンです。次の質問に日本語で答えてください:\n${question}`;
+      const context = scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
+      const scopeLabel = scope === 'selected' ? '一部のシーン' : 'シナリオ全体';
+      const prompt = `${context}\n\n上記はクトゥルフ神話TRPGシナリオの${scopeLabel}です。次の質問に日本語で答えてください:\n${question}`;
       try{
         const answer = aiSettings.provider === 'claude' ? await callClaude(prompt) : await callGemini(prompt);
         responseBox.textContent = answer;
@@ -2139,6 +2185,7 @@
   }
 
   document.getElementById('addNoteBtn').addEventListener('click', ()=> addNote());
+  document.getElementById('aiAssistBtn').addEventListener('click', ()=> openAiAssistModal());
 
   function renderNotes(){
     canvas.querySelectorAll('.sticky').forEach(el=>el.remove());
@@ -2211,9 +2258,8 @@
       const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
       const linkH = 26;
       const currentRowH = 26;
-      const aiAssistH = 34;
       const collapseFooterH = 24;
-      h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH + aiAssistH + collapseFooterH;
+      h = headH + bodyH + starH + clueH + enemyH + linkH + currentRowH + collapseFooterH;
     }
     if(side==='right') return { x: n.x + w, y: n.y + h/2 };
     if(side==='left') return { x: n.x, y: n.y + h/2 };
@@ -2649,9 +2695,6 @@
           ${enemyStatsHtml}
           ${linkHtml}
           ${currentRowHtml}
-          <div class="ai-assist-row" data-role="aiassist" title="このシーンの内容をAIに相談する">
-            <span>✨</span><span>AIに相談</span>
-          </div>
           <div class="collapse-footer" data-role="collapsefooter" title="折りたたむ">▲ 折りたたむ</div>
         </div>`;
 
@@ -2668,15 +2711,6 @@
         <div class="connect-handle" data-role="handle" title="ドラッグして接続"></div>
       `;
       canvas.appendChild(el);
-
-      const aiAssistEl = el.querySelector('[data-role="aiassist"]');
-      if(aiAssistEl){
-        aiAssistEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
-        aiAssistEl.addEventListener('click', (e)=>{
-          e.stopPropagation();
-          openAiAssistModal(n);
-        });
-      }
 
       const collapseFooterEl = el.querySelector('[data-role="collapsefooter"]');
       if(collapseFooterEl){
