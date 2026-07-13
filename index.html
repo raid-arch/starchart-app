@@ -1436,7 +1436,7 @@
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。</p>
+        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。「Claudeで開く」はClaude Desktopアプリの新規チャットにこの内容を自動入力します（要アプリインストール、送信は手動）。</p>
         ${hasSelection ? `
         <div class="ai-settings-row" style="margin-bottom:10px;">
           <label>対象</label>
@@ -1448,7 +1448,8 @@
         <textarea readonly spellcheck="false" data-role="text" style="height:260px;">${escapeHtml(buildText())}</textarea>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
-          <button class="confirm" data-role="copy">コピー</button>
+          <button data-role="copy">コピー</button>
+          <button class="confirm" data-role="openClaude">Claudeで開く</button>
         </div>
       </div>
     `;
@@ -1472,6 +1473,20 @@
       catch(e){ ta.focus(); ta.select(); document.execCommand('copy'); }
       copyBtn.textContent = 'コピーしました';
       setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
+    });
+
+    const openClaudeBtn = overlay.querySelector('[data-role="openClaude"]');
+    openClaudeBtn.addEventListener('click', ()=>{
+      // claude:// deep link prefills Claude Desktop's new-chat box (doesn't
+      // auto-send) -- the q param is truncated by the app at ~14000 chars,
+      // so trim here too and say so, rather than silently losing the tail.
+      const LIMIT = 14000;
+      let text = ta.value;
+      if(text.length > LIMIT){
+        text = text.slice(0, LIMIT);
+        openClaudeBtn.title = `本文が長いため先頭${LIMIT}文字のみ渡されます`;
+      }
+      window.location.href = 'claude://claude.ai/new?q=' + encodeURIComponent(text);
     });
   }
 
