@@ -289,13 +289,15 @@
   .node.type-ending{border-left-width:4px;}
 
   .node-head{
-    display:flex;align-items:center;gap:7px;
+    display:flex;flex-direction:column;gap:5px;
     padding:8px 9px;
     cursor:grab;
     border-bottom:1px solid var(--line);
     background:rgba(0,0,0,0.15);
     touch-action:none;
   }
+  .node-head-icons{display:flex;align-items:center;gap:7px;}
+  .node-head-icons .node-rename{margin-left:auto;}
   .node-head:active{cursor:grabbing;}
   .node-head.viewer-head{cursor:default;}
   .node-title.viewer-title{cursor:default;flex:1;}
@@ -2323,13 +2325,19 @@
 
   function nodeCenter(n, side){
     const w = nodeWidth();
-    const headH = 34;
     if(viewerMode){
-      // the viewer-mode node template is just the header row -- no body sections
-      if(side==='right') return { x: n.x + w, y: n.y + headH/2 };
-      if(side==='left') return { x: n.x, y: n.y + headH/2 };
-      return { x: n.x + w/2, y: n.y + headH/2 };
+      // the viewer-mode node template is still a single-row header (type-dot +
+      // title + optional current-badge, no action icons) -- unaffected by the
+      // two-row header used for the normal (editable) header below.
+      const viewerHeadH = 34;
+      if(side==='right') return { x: n.x + w, y: n.y + viewerHeadH/2 };
+      if(side==='left') return { x: n.x, y: n.y + viewerHeadH/2 };
+      return { x: n.x + w/2, y: n.y + viewerHeadH/2 };
     }
+    // the editable header is now two stacked rows (icons row, then title row)
+    // so it's taller than the old single-row layout: padding(16) + icon row
+    // (~20) + row gap(5) + title row(~18)
+    const headH = 59;
     let h;
     if(n.collapsed){
       h = headH + 72;
@@ -2821,12 +2829,14 @@
 
       el.innerHTML = `
         <div class="node-head">
-          <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
-          <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
+          <div class="node-head-icons">
+            <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
+            <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
+            <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
+            <span class="node-dup" data-role="dup" title="複製">⧉</span>
+            <span class="node-del" data-role="del">×</span>
+          </div>
           <div class="node-title" contenteditable="true" spellcheck="false" data-role="title">${escapeHtml(n.title)}</div>
-          <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
-          <span class="node-dup" data-role="dup" title="複製">⧉</span>
-          <span class="node-del" data-role="del">×</span>
         </div>
         ${bodyHtml}
         <div class="connect-handle" data-role="handle" title="ドラッグして接続"></div>
