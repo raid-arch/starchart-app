@@ -906,6 +906,7 @@
   const ACTIVE_PROJECT_KEY = 'scene-map-active-project-v1';
   const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
   const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
+  const CLAUDE_PROJECT_ID_STORAGE = 'scene-map-claude-project-id-v1';
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
   let projects = [];        // [{id, name, updatedAt}]
@@ -1424,6 +1425,9 @@
     return lines.join('\n');
   }
 
+  function loadClaudeProjectId(){ return localStorage.getItem(CLAUDE_PROJECT_ID_STORAGE) || ''; }
+  function saveClaudeProjectId(v){ localStorage.setItem(CLAUDE_PROJECT_ID_STORAGE, v); }
+
   function openCopyForClaudeModal(){
     const hasSelection = selectedIds.size > 0;
     let scope = hasSelection ? 'selected' : 'project';
@@ -1433,7 +1437,7 @@
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。「Claudeで開く」はClaude Desktopアプリの新規チャットにこの内容を自動入力します（要アプリインストール、送信は手動）。</p>
+        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。「Claudeで開く」はClaude Desktopアプリの新規チャットにこの内容を自動入力します（要アプリインストール、送信は手動）。設定資料(Wordなど)を読み込ませたClaude Projectがあれば、Project IDを設定して「コピーしてProjectを開く」から続きを貼り付けられます。</p>
         ${hasSelection ? `
         <div class="ai-settings-row" style="margin-bottom:10px;">
           <label>対象</label>
@@ -1443,9 +1447,15 @@
           </select>
         </div>` : `<div class="hint" style="margin:-4px 0 10px;">対象: プロジェクト全体（${state.nodes.length}ノード）</div>`}
         <textarea readonly spellcheck="false" data-role="text" style="height:260px;">${escapeHtml(buildText())}</textarea>
+        <div class="ai-settings-row" style="margin-top:10px;">
+          <label>Claude Project ID</label>
+          <input type="text" data-role="projectId" class="settings-input" placeholder="claude.aiのプロジェクトURL末尾のID（任意）" value="${escapeHtml(loadClaudeProjectId())}" />
+        </div>
+        <div class="hint" data-role="projectStatus" style="min-height:16px;"></div>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
           <button data-role="copy">コピー</button>
+          <button data-role="openProject">コピーしてProjectを開く</button>
           <button class="confirm" data-role="openClaude">Claudeで開く</button>
         </div>
       </div>
@@ -1464,10 +1474,14 @@
       });
     }
 
+    const copyToClipboard = async (text)=>{
+      try{ await navigator.clipboard.writeText(text); }
+      catch(e){ ta.focus(); ta.select(); document.execCommand('copy'); }
+    };
+
     const copyBtn = overlay.querySelector('[data-role="copy"]');
     copyBtn.addEventListener('click', async ()=>{
-      try{ await navigator.clipboard.writeText(ta.value); }
-      catch(e){ ta.focus(); ta.select(); document.execCommand('copy'); }
+      await copyToClipboard(ta.value);
       copyBtn.textContent = 'コピーしました';
       setTimeout(()=>{ copyBtn.textContent = 'コピー'; }, 1400);
     });
@@ -1484,6 +1498,24 @@
         openClaudeBtn.title = `本文が長いため先頭${LIMIT}文字のみ渡されます`;
       }
       window.location.href = 'claude://claude.ai/new?q=' + encodeURIComponent(text);
+    });
+
+    const projectIdEl = overlay.querySelector('[data-role="projectId"]');
+    const projectStatusEl = overlay.querySelector('[data-role="projectStatus"]');
+    projectIdEl.addEventListener('change', ()=> saveClaudeProjectId(projectIdEl.value.trim()));
+
+    const openProjectBtn = overlay.querySelector('[data-role="openProject"]');
+    openProjectBtn.addEventListener('click', async ()=>{
+      const id = projectIdEl.value.trim();
+      if(!id){
+        projectStatusEl.textContent = '先にClaude ProjectのIDを入力してください（Project内の会話に自動で貼り付ける機能はないため、開いたら手動で貼り付けてください）。';
+        projectIdEl.focus();
+        return;
+      }
+      saveClaudeProjectId(id);
+      await copyToClipboard(ta.value);
+      projectStatusEl.textContent = 'コピーしました。Projectが開いたら貼り付けてください。';
+      window.location.href = 'claude://claude.ai/project/' + encodeURIComponent(id);
     });
   }
 
