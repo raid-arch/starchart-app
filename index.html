@@ -2990,6 +2990,40 @@
         dragging = { id: n.id, grabDX: w.x - n.x, grabDY: w.y - n.y, historyPushed: false, group };
         el.classList.add('dragging');
         e.preventDefault();
+
+        // touch has no ctrl/cmd key to multi-select with -- a long press
+        // (hold without dragging) toggles selection instead
+        if(e.pointerType === 'touch'){
+          const startX = e.clientX, startY = e.clientY;
+          const startNodeX = n.x, startNodeY = n.y;
+          const pointerId = e.pointerId;
+          let moved = false;
+          const onMove = (me)=>{
+            if(me.pointerId !== pointerId) return;
+            if(Math.hypot(me.clientX-startX, me.clientY-startY) > 8) moved = true;
+          };
+          const onUp = (ue)=>{ if(ue.pointerId === pointerId) cleanup(); };
+          function cleanup(){
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+          }
+          document.addEventListener('pointermove', onMove);
+          document.addEventListener('pointerup', onUp);
+          document.addEventListener('pointercancel', onUp);
+          setTimeout(()=>{
+            cleanup();
+            if(moved || !dragging || dragging.id !== n.id) return;
+            // undo any sub-threshold jitter the drag handler may have applied, then select
+            n.x = startNodeX; n.y = startNodeY;
+            el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+            dragging = null;
+            el.classList.remove('dragging');
+            drawLinks();
+            toggleSelect(n.id);
+            navigator.vibrate?.(15);
+          }, 500);
+        }
       });
 
       // title/text edit
