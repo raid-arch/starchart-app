@@ -392,6 +392,25 @@
   .clue-content:empty:before{content:attr(data-placeholder);color:#5c5870;}
   .clue-content:focus{color:var(--ink);}
 
+  .clue-notes{margin-top:6px;padding-left:8px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:4px;}
+  .clue-note-row{display:flex;align-items:flex-start;gap:6px;}
+  .clue-note-content{
+    flex:1;min-width:0;font-size:11px;line-height:1.5;color:var(--ink-dim);outline:none;
+    min-height:16px;white-space:pre-wrap;overflow-wrap:break-word;
+  }
+  .clue-note-content:empty:before{content:attr(data-placeholder);color:#5c5870;}
+  .clue-note-content:focus{color:var(--ink);}
+  .clue-note-del{
+    flex:0 0 auto;width:14px;height:14px;line-height:13px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:11px;border-radius:2px;
+  }
+  .clue-note-del:hover{color:var(--blood);}
+  .clue-add-note{
+    align-self:flex-start;font-size:10px;color:var(--ink-dim);cursor:pointer;
+    border:1px solid var(--line);border-radius:2px;padding:1px 6px;margin-top:2px;
+  }
+  .clue-add-note:hover{color:var(--brass);border-color:var(--brass);}
+
   .enemy-stats{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .enemy-stats-label{font-size:10px;color:var(--blood);letter-spacing:0.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
   .enemy-stats-text{
@@ -895,6 +914,7 @@
     {key:'explore', label:'探索', color:'#b8944f'},
     {key:'battle', label:'戦闘', color:'#8a3241'},
     {key:'choice', label:'分岐', color:'#8a6fb0'},
+    {key:'event', label:'イベント', color:'#5fa87a'},
     {key:'ending', label:'エンディング', color:'#c9a24a'},
     {key:'other', label:'その他', color:'#6b6580'},
   ];
@@ -1419,7 +1439,10 @@
   function describeNodeForAi(n){
     const lines = [`---`, `[${n.type}] ${n.title || '(無題)'}`];
     if(n.text) lines.push(n.text);
-    (n.clues||[]).forEach(c=> lines.push(`  手がかり(${c.condition||'条件未設定'}): ${c.content||''}`));
+    (n.clues||[]).forEach(c=>{
+      lines.push(`  手がかり(${c.condition||'条件未設定'}): ${c.content||''}`);
+      (c.notes||[]).forEach(nt=>{ if(nt.text) lines.push(`    補足: ${nt.text}`); });
+    });
     return lines;
   }
 
@@ -1872,7 +1895,6 @@
     const n = state.nodes.find(x=>x.id===nodeId);
     if(!n || n.type !== 'battle') return;
     if(!Array.isArray(n.tokenIds)) n.tokenIds = [];
-    if(n.tokenIds.includes(tokenId)) return;
     pushHistory();
     n.tokenIds.push(tokenId);
     render();
@@ -2080,7 +2102,7 @@
   function addClueToNode(n){
     pushHistory();
     if(!Array.isArray(n.clues)) n.clues = [];
-    const clue = { id: uid(), condition: '', content: '' };
+    const clue = { id: uid(), condition: '', content: '', notes: [] };
     n.clues.push(clue);
     render();
     save();
@@ -2093,6 +2115,30 @@
   function deleteClueFromNode(n, clueId){
     pushHistory();
     n.clues = (n.clues||[]).filter(c=>c.id!==clueId);
+    render();
+    save();
+  }
+
+  function addNoteToClue(n, clueId){
+    const clue = (n.clues||[]).find(c=>c.id===clueId);
+    if(!clue) return;
+    pushHistory();
+    if(!Array.isArray(clue.notes)) clue.notes = [];
+    const note = { id: uid(), text: '' };
+    clue.notes.push(note);
+    render();
+    save();
+    setTimeout(()=>{
+      const el = canvas.querySelector(`[data-node-id="${n.id}"] [data-note-id="${note.id}"] [data-role="clue-note-content"]`);
+      if(el) el.focus();
+    }, 30);
+  }
+
+  function deleteNoteFromClue(n, clueId, noteId){
+    const clue = (n.clues||[]).find(c=>c.id===clueId);
+    if(!clue) return;
+    pushHistory();
+    clue.notes = (clue.notes||[]).filter(nt=>nt.id!==noteId);
     render();
     save();
   }
@@ -2129,7 +2175,7 @@
     const copy = {
       ...src, id: uid(), x: src.x + 28, y: src.y + 28,
       tokenIds: [...(src.tokenIds||[])],
-      clues: (src.clues||[]).map(c=>({...c, id: uid()})),
+      clues: (src.clues||[]).map(c=>({...c, id: uid(), notes: (c.notes||[]).map(nt=>({...nt, id: uid()}))})),
     };
     state.nodes.push(copy);
     render();
@@ -2421,9 +2467,12 @@
     }else{
       const bodyH = Math.max(40, 20 + Math.ceil((n.text||'').length/22)*16);
       const starH = n.type === 'ending' ? 26 : 0;
-      const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? n.tokenIds.length : 0;
+      const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? new Set(n.tokenIds).size : 0;
       const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
-      const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=> sum + 55 + Math.ceil((c.content||'').length/22)*15, 0) : 0;
+      const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=>{
+        const notesH = (c.notes||[]).reduce((s,nt)=> s + 22 + Math.ceil((nt.text||'').length/22)*14, 0);
+        return sum + 55 + Math.ceil((c.content||'').length/22)*15 + notesH + 22; // +22: add-note button row
+      }, 0) : 0;
       const linkH = 26;
       const currentRowH = 26;
       const collapseFooterH = 24;
@@ -2448,13 +2497,6 @@
     const r = state.relays.find(x=>x.id===id);
     if(r) return relayCenter(r);
     return null;
-  }
-  function anchorX(id){
-    const n = state.nodes.find(x=>x.id===id);
-    if(n) return n.x;
-    const r = state.relays.find(x=>x.id===id);
-    if(r) return r.x;
-    return 0;
   }
   function anchorExists(id){
     return state.nodes.some(x=>x.id===id) || state.relays.some(x=>x.id===id);
@@ -2590,7 +2632,7 @@
     function matches(n, q){
       if((n.title||'').toLowerCase().includes(q)) return true;
       if((n.text||'').toLowerCase().includes(q)) return true;
-      if(Array.isArray(n.clues) && n.clues.some(c => (c.content||'').toLowerCase().includes(q) || (c.condition||'').toLowerCase().includes(q))) return true;
+      if(Array.isArray(n.clues) && n.clues.some(c => (c.content||'').toLowerCase().includes(q) || (c.condition||'').toLowerCase().includes(q) || (Array.isArray(c.notes) && c.notes.some(nt=>(nt.text||'').toLowerCase().includes(q))))) return true;
       return false;
     }
     function renderList(filter){
@@ -2897,14 +2939,21 @@
           ${[1,2,3,4,5].map(s=>`<span class="star${s<=(n.stars||0)?' filled':''}" data-role="star" data-val="${s}">★</span>`).join('')}
         </div>` : '';
 
-      const linkedTokens = (n.type === 'battle' && Array.isArray(n.tokenIds))
-        ? n.tokenIds.map(id=>getToken(id)).filter(Boolean) : [];
-      const linkedTokensHtml = linkedTokens.length ? `
+      const linkedTokenCounts = [];
+      if(n.type === 'battle' && Array.isArray(n.tokenIds)){
+        n.tokenIds.forEach(id=>{
+          const existing = linkedTokenCounts.find(x=>x.tok.id===id);
+          if(existing){ existing.count++; return; }
+          const tok = getToken(id);
+          if(tok) linkedTokenCounts.push({ tok, count: 1 });
+        });
+      }
+      const linkedTokensHtml = linkedTokenCounts.length ? `
         <div class="linked-tokens">
-          ${linkedTokens.map(tok => `
+          ${linkedTokenCounts.map(({tok, count}) => `
             <div class="linked-token-chip" data-role="linkedtoken" data-token-id="${tok.id}" title="クリックで駒のステータスを見る">
-              <span class="linked-token-name">${escapeHtml(tok.name || '(名称未設定の駒)')}</span>
-              <span class="linked-token-unlink" data-role="linkedtokenunlink" data-token-id="${tok.id}" title="連携解除">×</span>
+              <span class="linked-token-name">${escapeHtml(tok.name || '(名称未設定の駒)')}${count>1 ? ` ×${count}` : ''}</span>
+              <span class="linked-token-unlink" data-role="linkedtokenunlink" data-token-id="${tok.id}" title="連携解除（1体分）">×</span>
             </div>`).join('')}
         </div>` : '';
       const enemyStatsHtml = n.type === 'battle' ? `
@@ -2938,6 +2987,14 @@
                 <span class="clue-del" data-role="clue-del" data-clue-id="${c.id}" title="削除">×</span>
               </div>
               <div class="clue-content" contenteditable="true" spellcheck="false" data-role="clue-content" data-clue-id="${c.id}" data-placeholder="手がかりの内容...">${escapeHtml(c.content||'')}</div>
+              <div class="clue-notes">
+                ${(c.notes||[]).map(nt => `
+                  <div class="clue-note-row" data-note-id="${nt.id}">
+                    <div class="clue-note-content" contenteditable="true" spellcheck="false" data-role="clue-note-content" data-clue-id="${c.id}" data-note-id="${nt.id}" data-placeholder="補足情報...">${escapeHtml(nt.text||'')}</div>
+                    <span class="clue-note-del" data-role="clue-note-del" data-clue-id="${c.id}" data-note-id="${nt.id}" title="削除">×</span>
+                  </div>`).join('')}
+                <span class="clue-add-note" data-role="addnote" data-clue-id="${c.id}" title="この手がかりに補足情報を追加">＋ 補足情報</span>
+              </div>
             </div>`).join('')}
         </div>` : '';
 
@@ -3149,6 +3206,32 @@
           deleteClueFromNode(n, delEl.dataset.clueId);
         });
       });
+      el.querySelectorAll('[data-role="clue-note-content"]').forEach(noteEl=>{
+        const clueId = noteEl.dataset.clueId, noteId = noteEl.dataset.noteId;
+        noteEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        noteEl.addEventListener('focus', ()=>{ noteEl.dataset.before = noteEl.textContent; });
+        noteEl.addEventListener('blur', ()=>{
+          const val = noteEl.textContent.trim();
+          const clue = (n.clues||[]).find(c=>c.id===clueId);
+          const note = clue && (clue.notes||[]).find(nt=>nt.id===noteId);
+          if(note){
+            if(val !== noteEl.dataset.before) pushHistory();
+            note.text = val; save(); render(); applyViewport();
+          }
+        });
+      });
+      el.querySelectorAll('[data-role="clue-note-del"]').forEach(delEl=>{
+        delEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          deleteNoteFromClue(n, delEl.dataset.clueId, delEl.dataset.noteId);
+        });
+      });
+      el.querySelectorAll('[data-role="addnote"]').forEach(addEl=>{
+        addEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          addNoteToClue(n, addEl.dataset.clueId);
+        });
+      });
 
       const enemyStatsEl = el.querySelector('[data-role="enemystats"]');
       if(enemyStatsEl){
@@ -3266,9 +3349,8 @@
 
     state.links.forEach(l=>{
       if(!anchorExists(l.from) || !anchorExists(l.to)) return;
-      const goingRight = anchorX(l.from) <= anchorX(l.to);
-      const p1 = anchorPoint(l.from, goingRight ? 'right' : 'left');
-      const p2 = anchorPoint(l.to, goingRight ? 'left' : 'right');
+      const p1 = anchorPoint(l.from, 'right');
+      const p2 = anchorPoint(l.to, 'left');
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
       path.setAttribute('d', pathBetween(p1,p2));
       path.setAttribute('class','link');
