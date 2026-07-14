@@ -3004,7 +3004,7 @@
         const badges = [];
         if(n.clues && n.clues.length) badges.push(`手がかり${n.clues.length}`);
         if(n.type === 'battle' && (n.enemyStats||'').trim()) badges.push('敵ステータスあり');
-        if(linkedTokens.length) badges.push(`駒${linkedTokens.length}`);
+        if(n.type === 'battle' && Array.isArray(n.tokenIds) && n.tokenIds.length) badges.push(`駒${n.tokenIds.length}`);
         if(n.type === 'ending') badges.push('★' + (n.stars||0));
         if(linkTarget) badges.push('リンクあり');
         if(isCurrent) badges.push('現在地');
