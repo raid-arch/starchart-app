@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://alcdn.msauth.net/browser/2.28.1/js/msal-browser.min.js" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1/mammoth.browser.min.js" async defer></script>
 <style>
   :root{
@@ -909,7 +909,7 @@
   const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
   const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
   const CLAUDE_PROJECT_ID_STORAGE = 'scene-map-claude-project-id-v1';
-  const MS_CLIENT_ID_STORAGE = 'scene-map-ms-client-id-v1'; // one Azure app registration shared by all projects
+  const GOOGLE_PICKER_API_KEY_STORAGE = 'scene-map-google-picker-api-key-v1'; // one API key shared by all projects
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
   let projects = [];        // [{id, name, updatedAt}]
@@ -1431,74 +1431,74 @@
   function loadClaudeProjectId(){ return localStorage.getItem(CLAUDE_PROJECT_ID_STORAGE) || ''; }
   function saveClaudeProjectId(v){ localStorage.setItem(CLAUDE_PROJECT_ID_STORAGE, v); }
 
-  /* ---- OneDrive Word doc reference (auto-fetched each time, via the user's own
-     Microsoft account -- MSAL handles login, Graph API resolves the share link to
-     a pre-signed download URL, mammoth.js extracts plain text from the .docx) ---- */
-  function loadMsClientId(){ return localStorage.getItem(MS_CLIENT_ID_STORAGE) || ''; }
-  function saveMsClientId(v){ localStorage.setItem(MS_CLIENT_ID_STORAGE, v); }
+  /* ---- Google Drive Word doc reference (auto-fetched each time, reusing the
+     same Google login as Drive sync -- the Picker grants this app per-file
+     access under the existing drive.file scope without any broader
+     permission, then Drive API export/download + mammoth.js gets the text) ---- */
+  function loadPickerApiKey(){ return localStorage.getItem(GOOGLE_PICKER_API_KEY_STORAGE) || ''; }
+  function savePickerApiKey(v){ localStorage.setItem(GOOGLE_PICKER_API_KEY_STORAGE, v); }
   // the linked Word file is per-project (each scenario can reference a different
   // document), stored on the project object alongside its name/edition
-  function loadMsWordShareUrl(){ const p = currentProject(); return (p && p.wordShareUrl) || ''; }
-  function saveMsWordShareUrl(v){ const p = currentProject(); if(p){ p.wordShareUrl = v; saveProjectsList(); } }
-  function loadMsWordFileName(){ const p = currentProject(); return (p && p.wordFileName) || ''; }
-  function saveMsWordFileName(v){ const p = currentProject(); if(p){ p.wordFileName = v; saveProjectsList(); } }
+  function loadWordDriveFile(){
+    const p = currentProject();
+    return p ? { id: p.wordDriveFileId || '', name: p.wordFileName || '', mimeType: p.wordMimeType || '' } : { id:'', name:'', mimeType:'' };
+  }
+  function saveWordDriveFile(id, name, mimeType){
+    const p = currentProject();
+    if(!p) return;
+    p.wordDriveFileId = id; p.wordFileName = name; p.wordMimeType = mimeType;
+    saveProjectsList();
+  }
 
-  let msalInstance = null;
-  function getMsalInstance(clientId){
-    if(msalInstance && msalInstance.__clientId === clientId) return msalInstance;
-    msalInstance = new msal.PublicClientApplication({
-      auth: {
-        clientId,
-        authority: 'https://login.microsoftonline.com/common', // multi-tenant + personal accounts (OneDrive personal)
-        redirectUri: window.location.origin + window.location.pathname
-      },
-      cache: { cacheLocation: 'localStorage' }
+  let pickerLibReady = null;
+  function ensurePickerLib(){
+    if(pickerLibReady) return pickerLibReady;
+    pickerLibReady = new Promise((resolve, reject)=>{
+      if(!window.gapi){ reject(new Error('Google APIスクリプトを読み込めませんでした（オフライン？）')); return; }
+      gapi.load('picker', { callback: resolve, onerror: ()=> reject(new Error('Pickerライブラリの読み込みに失敗しました')) });
     });
-    msalInstance.__clientId = clientId;
-    return msalInstance;
+    return pickerLibReady;
   }
 
-  async function acquireMsToken(clientId){
-    const app = getMsalInstance(clientId);
-    const scopes = ['Files.Read'];
-    const accounts = app.getAllAccounts();
-    if(!accounts.length){
-      const r = await app.loginPopup({ scopes });
-      return r.accessToken;
+  function openWordFilePicker(onPicked, onError){
+    if(!driveAccessToken){ onError(new Error('先に画面上部の「Googleでログイン」を済ませてください（Drive連携と共通です）')); return; }
+    const apiKey = loadPickerApiKey();
+    if(!apiKey){ onError(new Error('Google Picker API Keyを入力してください')); return; }
+    ensurePickerLib().then(()=>{
+      const view = new google.picker.View(google.picker.ViewId.DOCS);
+      const picker = new google.picker.PickerBuilder()
+        .setOAuthToken(driveAccessToken)
+        .setDeveloperKey(apiKey)
+        .setAppId(DRIVE_CLIENT_ID.split('-')[0])
+        .addView(view)
+        .setCallback((data)=>{
+          if(data.action === google.picker.Action.PICKED){
+            const doc = data[google.picker.Response.DOCUMENTS][0];
+            onPicked({
+              id: doc[google.picker.Document.ID],
+              name: doc[google.picker.Document.NAME],
+              mimeType: doc[google.picker.Document.MIME_TYPE]
+            });
+          }
+        })
+        .build();
+      picker.setVisible(true);
+    }).catch(onError);
+  }
+
+  async function fetchWordDocText(fileId, mimeType){
+    if(!driveAccessToken) throw new Error('先に画面上部の「Googleでログイン」を済ませてください（Drive連携と共通です）');
+    const headers = { Authorization: 'Bearer ' + driveAccessToken };
+    if(mimeType === 'application/vnd.google-apps.document'){
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers });
+      if(!res.ok) throw new Error(`Google Docsのエクスポートに失敗しました（HTTP ${res.status}）`);
+      return await res.text();
     }
-    try{
-      const r = await app.acquireTokenSilent({ scopes, account: accounts[0] });
-      return r.accessToken;
-    }catch(e){
-      const r = await app.acquireTokenPopup({ scopes, account: accounts[0] });
-      return r.accessToken;
-    }
-  }
-
-  // Graph's /shares endpoint takes a share URL encoded as documented:
-  // base64 the URL, then convert to unpadded base64url, prefixed with "u!"
-  function encodeMsShareUrl(url){
-    const base64 = btoa(unescape(encodeURIComponent(url)));
-    return 'u!' + base64.replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
-  }
-
-  async function fetchWordDocText(shareUrl, clientId){
-    const token = await acquireMsToken(clientId);
-    const encoded = encodeMsShareUrl(shareUrl);
-    const metaRes = await fetch(`https://graph.microsoft.com/v1.0/shares/${encoded}/driveItem?select=id,name,@microsoft.graph.downloadUrl`, {
-      headers: { Authorization: 'Bearer ' + token }
-    });
-    if(!metaRes.ok) throw new Error(`OneDriveのファイル情報取得に失敗しました（HTTP ${metaRes.status}）`);
-    const meta = await metaRes.json();
-    const downloadUrl = meta['@microsoft.graph.downloadUrl'];
-    if(!downloadUrl) throw new Error('ダウンロードURLが取得できませんでした');
-    // pre-signed URL from Graph -- fetched with no Authorization header, so no
-    // CORS preflight (adding the header here would break it on the 302 redirect)
-    const fileRes = await fetch(downloadUrl);
-    if(!fileRes.ok) throw new Error(`ファイル本体の取得に失敗しました（HTTP ${fileRes.status}）`);
-    const buf = await fileRes.arrayBuffer();
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers });
+    if(!res.ok) throw new Error(`ファイルの取得に失敗しました（HTTP ${res.status}）`);
+    const buf = await res.arrayBuffer();
     const result = await mammoth.extractRawText({ arrayBuffer: buf });
-    return { text: result.value, name: meta.name };
+    return result.value;
   }
 
   function openCopyForClaudeModal(){
@@ -1528,17 +1528,16 @@
         </div>
         <div class="hint" data-role="projectStatus" style="min-height:16px;"></div>
         <div class="ai-settings-row" style="margin-top:10px;">
-          <label>MS Client ID</label>
-          <input type="text" data-role="msClientId" class="settings-input" placeholder="Azureアプリ登録のクライアントID（任意）" value="${escapeHtml(loadMsClientId())}" />
+          <label>Picker API Key</label>
+          <input type="text" data-role="pickerKey" class="settings-input" placeholder="Google Cloud ConsoleのAPIキー（任意）" value="${escapeHtml(loadPickerApiKey())}" />
         </div>
-        <div class="ai-settings-row">
-          <label>OneDrive共有リンク</label>
-          <input type="text" data-role="msShareUrl" class="settings-input" placeholder="Wordファイルの共有リンク（任意）" value="${escapeHtml(loadMsWordShareUrl())}" />
+        <div class="hint" style="margin:-4px 0 6px;">
+          ${(()=>{ const f = loadWordDriveFile(); return f.id ? `連携中のWord資料（${escapeHtml(currentProject() ? currentProject().name : '')}専用）: 「${escapeHtml(f.name)}」` : `このプロジェクト（${escapeHtml(currentProject() ? currentProject().name : '')}）にはまだWord資料が連携されていません。`; })()}
         </div>
-        <div class="hint" style="margin:-4px 0 6px;">共有リンクはこのプロジェクト（${escapeHtml(currentProject() ? currentProject().name : '')}）専用に保存されます。</div>
         <div class="hint" data-role="wordStatus" style="min-height:16px;"></div>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
+          <button data-role="pickWord">Word資料を選択(Drive)</button>
           <button data-role="refetchWord">Word資料を再取得</button>
           <button data-role="copy">コピー</button>
           <button data-role="openProject">コピーしてProjectを開く</button>
@@ -1560,34 +1559,38 @@
       });
     }
 
-    const msClientIdEl = overlay.querySelector('[data-role="msClientId"]');
-    const msShareUrlEl = overlay.querySelector('[data-role="msShareUrl"]');
+    const pickerKeyEl = overlay.querySelector('[data-role="pickerKey"]');
     const wordStatusEl = overlay.querySelector('[data-role="wordStatus"]');
-    msClientIdEl.addEventListener('change', ()=> saveMsClientId(msClientIdEl.value.trim()));
-    msShareUrlEl.addEventListener('change', ()=> saveMsWordShareUrl(msShareUrlEl.value.trim()));
+    pickerKeyEl.addEventListener('change', ()=> savePickerApiKey(pickerKeyEl.value.trim()));
 
     async function refreshWordDoc(){
-      const clientId = msClientIdEl.value.trim();
-      const shareUrl = msShareUrlEl.value.trim();
-      if(!clientId || !shareUrl){
-        wordStatusEl.textContent = 'MS Client IDとOneDrive共有リンクの両方を入力してください。';
+      const file = loadWordDriveFile();
+      if(!file.id){
+        wordStatusEl.textContent = '先に「Word資料を選択」でファイルを選んでください。';
         return;
       }
-      saveMsClientId(clientId);
-      saveMsWordShareUrl(shareUrl);
-      wordStatusEl.textContent = 'Word資料を取得中...（初回はMicrosoftのログイン画面が開きます）';
+      wordStatusEl.textContent = `「${file.name}」を取得中...`;
       try{
-        const { text, name } = await fetchWordDocText(shareUrl, clientId);
-        saveMsWordFileName(name);
-        wordSection = `【参照資料: ${name}】\n${text.trim()}`;
+        const text = await fetchWordDocText(file.id, file.mimeType);
+        wordSection = `【参照資料: ${file.name}】\n${text.trim()}`;
         ta.value = buildText();
-        wordStatusEl.textContent = `「${name}」を取得しました（${text.length}文字）`;
+        wordStatusEl.textContent = `「${file.name}」を取得しました（${text.length}文字）`;
       }catch(err){
         wordStatusEl.textContent = 'Word資料の取得に失敗: ' + (err && err.message ? err.message : '不明なエラー');
       }
     }
     overlay.querySelector('[data-role="refetchWord"]').addEventListener('click', refreshWordDoc);
-    if(loadMsClientId() && loadMsWordShareUrl()) refreshWordDoc();
+    overlay.querySelector('[data-role="pickWord"]').addEventListener('click', ()=>{
+      savePickerApiKey(pickerKeyEl.value.trim());
+      openWordFilePicker(
+        (picked)=>{
+          saveWordDriveFile(picked.id, picked.name, picked.mimeType);
+          refreshWordDoc();
+        },
+        (err)=>{ wordStatusEl.textContent = err.message; }
+      );
+    });
+    if(loadWordDriveFile().id) refreshWordDoc();
 
     const copyToClipboard = async (text)=>{
       try{ await navigator.clipboard.writeText(text); }
