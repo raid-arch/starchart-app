@@ -1229,9 +1229,25 @@
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
   const DRIVE_FILE_NAME = 'scene-map-backup.json';
   const DRIVE_FILE_ID_KEY = 'scene-map-drive-file-id';
+  const DRIVE_TOKEN_CACHE_KEY = 'scene-map-drive-token-cache-v1'; // {token, expiresAt} -- lets a reload skip the login popup while the token is still valid
 
   let driveAccessToken = null;
   let driveTokenClient = null;
+
+  function driveCacheToken(token, expiresInSeconds){
+    const expiresAt = Date.now() + (expiresInSeconds || 0) * 1000;
+    localStorage.setItem(DRIVE_TOKEN_CACHE_KEY, JSON.stringify({ token, expiresAt }));
+  }
+  function driveLoadCachedToken(){
+    try{
+      const raw = localStorage.getItem(DRIVE_TOKEN_CACHE_KEY);
+      if(!raw) return null;
+      const { token, expiresAt } = JSON.parse(raw);
+      // small buffer so we don't hand out a token that expires mid-request
+      if(token && expiresAt && expiresAt - 60000 > Date.now()) return token;
+    }catch(e){ /* ignore malformed cache */ }
+    return null;
+  }
 
   function driveSetStatus(text){
     const el = document.getElementById('driveSyncStatus');
@@ -1250,6 +1266,7 @@
       callback: (resp)=>{
         if(resp && resp.access_token){
           driveAccessToken = resp.access_token;
+          driveCacheToken(resp.access_token, resp.expires_in);
           driveSetStatus('ログイン済み');
           document.getElementById('driveSignInBtn').style.display = 'none';
           document.getElementById('driveUploadBtn').style.display = '';
@@ -1382,6 +1399,17 @@
     signInBtn.addEventListener('click', driveSignIn);
     document.getElementById('driveUploadBtn').addEventListener('click', driveUpload);
     document.getElementById('driveDownloadBtn').addEventListener('click', driveDownload);
+
+    // skip the login popup entirely if a still-valid token is cached from
+    // an earlier session in this browser
+    const cached = driveLoadCachedToken();
+    if(cached){
+      driveAccessToken = cached;
+      driveSetStatus('ログイン済み');
+      signInBtn.style.display = 'none';
+      document.getElementById('driveUploadBtn').style.display = '';
+      document.getElementById('driveDownloadBtn').style.display = '';
+    }
   }
 
   /* ---- copy-for-chat helper (no API calls, no keys) ----
