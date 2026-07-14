@@ -909,9 +909,7 @@
   const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
   const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
   const CLAUDE_PROJECT_ID_STORAGE = 'scene-map-claude-project-id-v1';
-  const MS_CLIENT_ID_STORAGE = 'scene-map-ms-client-id-v1';
-  const MS_WORD_SHARE_URL_STORAGE = 'scene-map-ms-word-share-url-v1';
-  const MS_WORD_FILE_NAME_STORAGE = 'scene-map-ms-word-file-name-v1';
+  const MS_CLIENT_ID_STORAGE = 'scene-map-ms-client-id-v1'; // one Azure app registration shared by all projects
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
   let projects = [];        // [{id, name, updatedAt}]
@@ -1438,10 +1436,12 @@
      a pre-signed download URL, mammoth.js extracts plain text from the .docx) ---- */
   function loadMsClientId(){ return localStorage.getItem(MS_CLIENT_ID_STORAGE) || ''; }
   function saveMsClientId(v){ localStorage.setItem(MS_CLIENT_ID_STORAGE, v); }
-  function loadMsWordShareUrl(){ return localStorage.getItem(MS_WORD_SHARE_URL_STORAGE) || ''; }
-  function saveMsWordShareUrl(v){ localStorage.setItem(MS_WORD_SHARE_URL_STORAGE, v); }
-  function loadMsWordFileName(){ return localStorage.getItem(MS_WORD_FILE_NAME_STORAGE) || ''; }
-  function saveMsWordFileName(v){ localStorage.setItem(MS_WORD_FILE_NAME_STORAGE, v); }
+  // the linked Word file is per-project (each scenario can reference a different
+  // document), stored on the project object alongside its name/edition
+  function loadMsWordShareUrl(){ const p = currentProject(); return (p && p.wordShareUrl) || ''; }
+  function saveMsWordShareUrl(v){ const p = currentProject(); if(p){ p.wordShareUrl = v; saveProjectsList(); } }
+  function loadMsWordFileName(){ const p = currentProject(); return (p && p.wordFileName) || ''; }
+  function saveMsWordFileName(v){ const p = currentProject(); if(p){ p.wordFileName = v; saveProjectsList(); } }
 
   let msalInstance = null;
   function getMsalInstance(clientId){
@@ -1535,6 +1535,7 @@
           <label>OneDrive共有リンク</label>
           <input type="text" data-role="msShareUrl" class="settings-input" placeholder="Wordファイルの共有リンク（任意）" value="${escapeHtml(loadMsWordShareUrl())}" />
         </div>
+        <div class="hint" style="margin:-4px 0 6px;">共有リンクはこのプロジェクト（${escapeHtml(currentProject() ? currentProject().name : '')}）専用に保存されます。</div>
         <div class="hint" data-role="wordStatus" style="min-height:16px;"></div>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
