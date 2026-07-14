@@ -15,8 +15,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://apis.google.com/js/api.js" async defer></script>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1/mammoth.browser.min.js" async defer></script>
 <style>
   :root{
     --void:#0a0a12;
@@ -909,7 +907,6 @@
   const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
   const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
   const CLAUDE_PROJECT_ID_STORAGE = 'scene-map-claude-project-id-v1';
-  const GOOGLE_PICKER_API_KEY_STORAGE = 'scene-map-google-picker-api-key-v1'; // one API key shared by all projects
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
   let projects = [];        // [{id, name, updatedAt}]
@@ -1431,88 +1428,16 @@
   function loadClaudeProjectId(){ return localStorage.getItem(CLAUDE_PROJECT_ID_STORAGE) || ''; }
   function saveClaudeProjectId(v){ localStorage.setItem(CLAUDE_PROJECT_ID_STORAGE, v); }
 
-  /* ---- Google Drive Word doc reference (auto-fetched each time, reusing the
-     same Google login as Drive sync -- the Picker grants this app per-file
-     access under the existing drive.file scope without any broader
-     permission, then Drive API export/download + mammoth.js gets the text) ---- */
-  function loadPickerApiKey(){ return localStorage.getItem(GOOGLE_PICKER_API_KEY_STORAGE) || ''; }
-  function savePickerApiKey(v){ localStorage.setItem(GOOGLE_PICKER_API_KEY_STORAGE, v); }
-  // the linked Word file is per-project (each scenario can reference a different
-  // document), stored on the project object alongside its name/edition
-  function loadWordDriveFile(){
-    const p = currentProject();
-    return p ? { id: p.wordDriveFileId || '', name: p.wordFileName || '', mimeType: p.wordMimeType || '' } : { id:'', name:'', mimeType:'' };
-  }
-  function saveWordDriveFile(id, name, mimeType){
-    const p = currentProject();
-    if(!p) return;
-    p.wordDriveFileId = id; p.wordFileName = name; p.wordMimeType = mimeType;
-    saveProjectsList();
-  }
-
-  let pickerLibReady = null;
-  function ensurePickerLib(){
-    if(pickerLibReady) return pickerLibReady;
-    pickerLibReady = new Promise((resolve, reject)=>{
-      if(!window.gapi){ reject(new Error('Google APIスクリプトを読み込めませんでした（オフライン？）')); return; }
-      gapi.load('picker', { callback: resolve, onerror: ()=> reject(new Error('Pickerライブラリの読み込みに失敗しました')) });
-    });
-    return pickerLibReady;
-  }
-
-  function openWordFilePicker(onPicked, onError){
-    if(!driveAccessToken){ onError(new Error('先に画面上部の「Googleでログイン」を済ませてください（Drive連携と共通です）')); return; }
-    const apiKey = loadPickerApiKey();
-    if(!apiKey){ onError(new Error('Google Picker API Keyを入力してください')); return; }
-    ensurePickerLib().then(()=>{
-      const view = new google.picker.View(google.picker.ViewId.DOCS);
-      const picker = new google.picker.PickerBuilder()
-        .setOAuthToken(driveAccessToken)
-        .setDeveloperKey(apiKey)
-        .setAppId(DRIVE_CLIENT_ID.split('-')[0])
-        .addView(view)
-        .setCallback((data)=>{
-          if(data.action === google.picker.Action.PICKED){
-            const doc = data[google.picker.Response.DOCUMENTS][0];
-            onPicked({
-              id: doc[google.picker.Document.ID],
-              name: doc[google.picker.Document.NAME],
-              mimeType: doc[google.picker.Document.MIME_TYPE]
-            });
-          }
-        })
-        .build();
-      picker.setVisible(true);
-    }).catch(onError);
-  }
-
-  async function fetchWordDocText(fileId, mimeType){
-    if(!driveAccessToken) throw new Error('先に画面上部の「Googleでログイン」を済ませてください（Drive連携と共通です）');
-    const headers = { Authorization: 'Bearer ' + driveAccessToken };
-    if(mimeType === 'application/vnd.google-apps.document'){
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, { headers });
-      if(!res.ok) throw new Error(`Google Docsのエクスポートに失敗しました（HTTP ${res.status}）`);
-      return await res.text();
-    }
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers });
-    if(!res.ok) throw new Error(`ファイルの取得に失敗しました（HTTP ${res.status}）`);
-    const buf = await res.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer: buf });
-    return result.value;
-  }
-
   function openCopyForClaudeModal(){
     const hasSelection = selectedIds.size > 0;
     let scope = hasSelection ? 'selected' : 'project';
-    const buildNodeText = ()=> scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
-    let wordSection = ''; // prepended once OneDrive fetch succeeds
-    const buildText = ()=> wordSection ? `${wordSection}\n\n---\n\n${buildNodeText()}` : buildNodeText();
+    const buildText = ()=> scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-box wide">
-        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。「Claudeで開く」はClaude Desktopアプリの新規チャットにこの内容を自動入力します（要アプリインストール、送信は手動）。設定資料(Wordなど)を読み込ませたClaude Projectがあれば、Project IDを設定して「コピーしてProjectを開く」から続きを貼り付けられます。</p>
+        <p>シナリオの内容をテキストとしてコピーします。このチャットやclaude.aiに貼り付けて相談できます。「Claudeで開く」はClaude Desktopアプリの新規チャットにこの内容を自動入力します（要アプリインストール、送信は手動）。Claude ProjectのIDを設定しておけば、「コピーしてProjectを開く」からそちらに続きを貼り付けられます。</p>
         ${hasSelection ? `
         <div class="ai-settings-row" style="margin-bottom:10px;">
           <label>対象</label>
@@ -1527,18 +1452,8 @@
           <input type="text" data-role="projectId" class="settings-input" placeholder="claude.aiのプロジェクトURL末尾のID（任意）" value="${escapeHtml(loadClaudeProjectId())}" />
         </div>
         <div class="hint" data-role="projectStatus" style="min-height:16px;"></div>
-        <div class="ai-settings-row" style="margin-top:10px;">
-          <label>Picker API Key</label>
-          <input type="text" data-role="pickerKey" class="settings-input" placeholder="Google Cloud ConsoleのAPIキー（任意）" value="${escapeHtml(loadPickerApiKey())}" />
-        </div>
-        <div class="hint" style="margin:-4px 0 6px;">
-          ${(()=>{ const f = loadWordDriveFile(); return f.id ? `連携中のWord資料（${escapeHtml(currentProject() ? currentProject().name : '')}専用）: 「${escapeHtml(f.name)}」` : `このプロジェクト（${escapeHtml(currentProject() ? currentProject().name : '')}）にはまだWord資料が連携されていません。`; })()}
-        </div>
-        <div class="hint" data-role="wordStatus" style="min-height:16px;"></div>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
-          <button data-role="pickWord">Word資料を選択(Drive)</button>
-          <button data-role="refetchWord">Word資料を再取得</button>
           <button data-role="copy">コピー</button>
           <button data-role="openProject">コピーしてProjectを開く</button>
           <button class="confirm" data-role="openClaude">Claudeで開く</button>
@@ -1558,39 +1473,6 @@
         ta.value = buildText();
       });
     }
-
-    const pickerKeyEl = overlay.querySelector('[data-role="pickerKey"]');
-    const wordStatusEl = overlay.querySelector('[data-role="wordStatus"]');
-    pickerKeyEl.addEventListener('change', ()=> savePickerApiKey(pickerKeyEl.value.trim()));
-
-    async function refreshWordDoc(){
-      const file = loadWordDriveFile();
-      if(!file.id){
-        wordStatusEl.textContent = '先に「Word資料を選択」でファイルを選んでください。';
-        return;
-      }
-      wordStatusEl.textContent = `「${file.name}」を取得中...`;
-      try{
-        const text = await fetchWordDocText(file.id, file.mimeType);
-        wordSection = `【参照資料: ${file.name}】\n${text.trim()}`;
-        ta.value = buildText();
-        wordStatusEl.textContent = `「${file.name}」を取得しました（${text.length}文字）`;
-      }catch(err){
-        wordStatusEl.textContent = 'Word資料の取得に失敗: ' + (err && err.message ? err.message : '不明なエラー');
-      }
-    }
-    overlay.querySelector('[data-role="refetchWord"]').addEventListener('click', refreshWordDoc);
-    overlay.querySelector('[data-role="pickWord"]').addEventListener('click', ()=>{
-      savePickerApiKey(pickerKeyEl.value.trim());
-      openWordFilePicker(
-        (picked)=>{
-          saveWordDriveFile(picked.id, picked.name, picked.mimeType);
-          refreshWordDoc();
-        },
-        (err)=>{ wordStatusEl.textContent = err.message; }
-      );
-    });
-    if(loadWordDriveFile().id) refreshWordDoc();
 
     const copyToClipboard = async (text)=>{
       try{ await navigator.clipboard.writeText(text); }
