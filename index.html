@@ -15,6 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://alcdn.msauth.net/browser/2.28.1/js/msal-browser.min.js" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1/mammoth.browser.min.js" async defer></script>
 <style>
   :root{
     --void:#0a0a12;
@@ -907,6 +909,9 @@
   const GRAPH_KEY_PREFIX = 'scene-thread-graph-v3:';
   const LEGACY_STORE_KEY = 'scene-thread-graph-v3'; // pre-multi-project single save, migrated on first load
   const CLAUDE_PROJECT_ID_STORAGE = 'scene-map-claude-project-id-v1';
+  const MS_CLIENT_ID_STORAGE = 'scene-map-ms-client-id-v1';
+  const MS_WORD_SHARE_URL_STORAGE = 'scene-map-ms-word-share-url-v1';
+  const MS_WORD_FILE_NAME_STORAGE = 'scene-map-ms-word-file-name-v1';
   const WORLD_OFFSET = 6000; // matches <g transform> in svg, keeps path coords sane
 
   let projects = [];        // [{id, name, updatedAt}]
@@ -1428,10 +1433,80 @@
   function loadClaudeProjectId(){ return localStorage.getItem(CLAUDE_PROJECT_ID_STORAGE) || ''; }
   function saveClaudeProjectId(v){ localStorage.setItem(CLAUDE_PROJECT_ID_STORAGE, v); }
 
+  /* ---- OneDrive Word doc reference (auto-fetched each time, via the user's own
+     Microsoft account -- MSAL handles login, Graph API resolves the share link to
+     a pre-signed download URL, mammoth.js extracts plain text from the .docx) ---- */
+  function loadMsClientId(){ return localStorage.getItem(MS_CLIENT_ID_STORAGE) || ''; }
+  function saveMsClientId(v){ localStorage.setItem(MS_CLIENT_ID_STORAGE, v); }
+  function loadMsWordShareUrl(){ return localStorage.getItem(MS_WORD_SHARE_URL_STORAGE) || ''; }
+  function saveMsWordShareUrl(v){ localStorage.setItem(MS_WORD_SHARE_URL_STORAGE, v); }
+  function loadMsWordFileName(){ return localStorage.getItem(MS_WORD_FILE_NAME_STORAGE) || ''; }
+  function saveMsWordFileName(v){ localStorage.setItem(MS_WORD_FILE_NAME_STORAGE, v); }
+
+  let msalInstance = null;
+  function getMsalInstance(clientId){
+    if(msalInstance && msalInstance.__clientId === clientId) return msalInstance;
+    msalInstance = new msal.PublicClientApplication({
+      auth: {
+        clientId,
+        authority: 'https://login.microsoftonline.com/common', // multi-tenant + personal accounts (OneDrive personal)
+        redirectUri: window.location.origin + window.location.pathname
+      },
+      cache: { cacheLocation: 'localStorage' }
+    });
+    msalInstance.__clientId = clientId;
+    return msalInstance;
+  }
+
+  async function acquireMsToken(clientId){
+    const app = getMsalInstance(clientId);
+    const scopes = ['Files.Read'];
+    const accounts = app.getAllAccounts();
+    if(!accounts.length){
+      const r = await app.loginPopup({ scopes });
+      return r.accessToken;
+    }
+    try{
+      const r = await app.acquireTokenSilent({ scopes, account: accounts[0] });
+      return r.accessToken;
+    }catch(e){
+      const r = await app.acquireTokenPopup({ scopes, account: accounts[0] });
+      return r.accessToken;
+    }
+  }
+
+  // Graph's /shares endpoint takes a share URL encoded as documented:
+  // base64 the URL, then convert to unpadded base64url, prefixed with "u!"
+  function encodeMsShareUrl(url){
+    const base64 = btoa(unescape(encodeURIComponent(url)));
+    return 'u!' + base64.replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
+  }
+
+  async function fetchWordDocText(shareUrl, clientId){
+    const token = await acquireMsToken(clientId);
+    const encoded = encodeMsShareUrl(shareUrl);
+    const metaRes = await fetch(`https://graph.microsoft.com/v1.0/shares/${encoded}/driveItem?select=id,name,@microsoft.graph.downloadUrl`, {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if(!metaRes.ok) throw new Error(`OneDriveのファイル情報取得に失敗しました（HTTP ${metaRes.status}）`);
+    const meta = await metaRes.json();
+    const downloadUrl = meta['@microsoft.graph.downloadUrl'];
+    if(!downloadUrl) throw new Error('ダウンロードURLが取得できませんでした');
+    // pre-signed URL from Graph -- fetched with no Authorization header, so no
+    // CORS preflight (adding the header here would break it on the 302 redirect)
+    const fileRes = await fetch(downloadUrl);
+    if(!fileRes.ok) throw new Error(`ファイル本体の取得に失敗しました（HTTP ${fileRes.status}）`);
+    const buf = await fileRes.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: buf });
+    return { text: result.value, name: meta.name };
+  }
+
   function openCopyForClaudeModal(){
     const hasSelection = selectedIds.size > 0;
     let scope = hasSelection ? 'selected' : 'project';
-    const buildText = ()=> scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
+    const buildNodeText = ()=> scope === 'selected' ? buildSelectedAiContext(selectedIds) : buildProjectAiContext();
+    let wordSection = ''; // prepended once OneDrive fetch succeeds
+    const buildText = ()=> wordSection ? `${wordSection}\n\n---\n\n${buildNodeText()}` : buildNodeText();
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -1452,8 +1527,18 @@
           <input type="text" data-role="projectId" class="settings-input" placeholder="claude.aiのプロジェクトURL末尾のID（任意）" value="${escapeHtml(loadClaudeProjectId())}" />
         </div>
         <div class="hint" data-role="projectStatus" style="min-height:16px;"></div>
+        <div class="ai-settings-row" style="margin-top:10px;">
+          <label>MS Client ID</label>
+          <input type="text" data-role="msClientId" class="settings-input" placeholder="Azureアプリ登録のクライアントID（任意）" value="${escapeHtml(loadMsClientId())}" />
+        </div>
+        <div class="ai-settings-row">
+          <label>OneDrive共有リンク</label>
+          <input type="text" data-role="msShareUrl" class="settings-input" placeholder="Wordファイルの共有リンク（任意）" value="${escapeHtml(loadMsWordShareUrl())}" />
+        </div>
+        <div class="hint" data-role="wordStatus" style="min-height:16px;"></div>
         <div class="modal-actions">
           <button data-role="close">閉じる</button>
+          <button data-role="refetchWord">Word資料を再取得</button>
           <button data-role="copy">コピー</button>
           <button data-role="openProject">コピーしてProjectを開く</button>
           <button class="confirm" data-role="openClaude">Claudeで開く</button>
@@ -1473,6 +1558,35 @@
         ta.value = buildText();
       });
     }
+
+    const msClientIdEl = overlay.querySelector('[data-role="msClientId"]');
+    const msShareUrlEl = overlay.querySelector('[data-role="msShareUrl"]');
+    const wordStatusEl = overlay.querySelector('[data-role="wordStatus"]');
+    msClientIdEl.addEventListener('change', ()=> saveMsClientId(msClientIdEl.value.trim()));
+    msShareUrlEl.addEventListener('change', ()=> saveMsWordShareUrl(msShareUrlEl.value.trim()));
+
+    async function refreshWordDoc(){
+      const clientId = msClientIdEl.value.trim();
+      const shareUrl = msShareUrlEl.value.trim();
+      if(!clientId || !shareUrl){
+        wordStatusEl.textContent = 'MS Client IDとOneDrive共有リンクの両方を入力してください。';
+        return;
+      }
+      saveMsClientId(clientId);
+      saveMsWordShareUrl(shareUrl);
+      wordStatusEl.textContent = 'Word資料を取得中...（初回はMicrosoftのログイン画面が開きます）';
+      try{
+        const { text, name } = await fetchWordDocText(shareUrl, clientId);
+        saveMsWordFileName(name);
+        wordSection = `【参照資料: ${name}】\n${text.trim()}`;
+        ta.value = buildText();
+        wordStatusEl.textContent = `「${name}」を取得しました（${text.length}文字）`;
+      }catch(err){
+        wordStatusEl.textContent = 'Word資料の取得に失敗: ' + (err && err.message ? err.message : '不明なエラー');
+      }
+    }
+    overlay.querySelector('[data-role="refetchWord"]').addEventListener('click', refreshWordDoc);
+    if(loadMsClientId() && loadMsWordShareUrl()) refreshWordDoc();
 
     const copyToClipboard = async (text)=>{
       try{ await navigator.clipboard.writeText(text); }
