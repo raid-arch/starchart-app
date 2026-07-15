@@ -87,6 +87,15 @@
   }
   .toolbar-scroll::-webkit-scrollbar{display:none;}
   .toolbar-scroll button{flex:0 0 auto;}
+  .info-tool{
+    flex:0 0 auto;display:inline-flex;align-items:center;
+    font-family:'Zen Kaku Gothic New',sans-serif;font-size:13px;
+    background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+    padding:8px 12px;border-radius:3px;cursor:grab;touch-action:none;
+    white-space:nowrap;user-select:none;
+  }
+  .info-tool:hover{border-color:var(--brass);color:var(--brass);}
+  .info-tool:active{cursor:grabbing;}
   .details-toggle{flex:0 0 auto;}
   button{
     font-family:'Zen Kaku Gothic New',sans-serif;
@@ -230,7 +239,7 @@
   }
   .token-item-del:hover{color:var(--blood);}
 
-  .token-ghost{
+  .token-ghost, .info-ghost{
     position:fixed;z-index:200;transform:translate(-50%,-140%);
     background:var(--panel);border:1px solid var(--brass);border-radius:4px;
     padding:6px 12px;font-size:12px;color:var(--ink);pointer-events:none;
@@ -284,7 +293,7 @@
   .node.last-focused{z-index:8;}
   .node.dragging{box-shadow:0 12px 30px rgba(0,0,0,0.6);z-index:10;}
   .node.selected{outline:2px solid var(--brass);outline-offset:2px;box-shadow:0 0 0 4px rgba(184,148,79,0.18), 0 6px 18px rgba(0,0,0,0.45);}
-  .node.token-drop-hover{outline:2px dashed var(--brass);outline-offset:3px;}
+  .node.token-drop-hover, .node.info-drop-hover{outline:2px dashed var(--brass);outline-offset:3px;}
   .node.type-choice{border-left-style:dashed;border-left-width:4px;}
   .node.type-ending{border-left-width:4px;}
 
@@ -329,6 +338,11 @@
     color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;
   }
   .node-dup:hover{color:var(--star);}
+  .node-addnext{
+    flex:0 0 auto;width:18px;height:18px;line-height:16px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:13px;border-radius:2px;
+  }
+  .node-addnext:hover{color:var(--brass);}
   .node-del{
     flex:0 0 auto;width:20px;height:20px;line-height:18px;text-align:center;
     color:var(--ink-dim);cursor:pointer;font-size:15px;border-radius:2px;
@@ -349,11 +363,6 @@
   }
   .star-row .star.filled{color:var(--brass);}
 
-  .node-add-clue{
-    flex:0 0 auto;width:16px;height:16px;line-height:14px;text-align:center;
-    color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;border:1px solid var(--line);
-  }
-  .node-add-clue:hover{color:var(--brass);border-color:var(--brass);}
   .node-body-collapsed{cursor:pointer;}
   .node-body-collapsed:hover .node-preview{color:var(--ink);}
   .node-preview{
@@ -385,6 +394,15 @@
     color:var(--ink-dim);cursor:pointer;font-size:12px;border-radius:2px;
   }
   .clue-del:hover{color:var(--blood);}
+  .clue-check{
+    flex:0 0 auto;width:16px;height:16px;line-height:14px;text-align:center;
+    color:var(--ink-dim);cursor:pointer;font-size:11px;border-radius:50%;
+    border:1px solid var(--line);
+  }
+  .clue-check:hover{color:var(--brass);border-color:var(--brass);}
+  .clue-item.clue-done{opacity:0.55;}
+  .clue-item.clue-done .clue-check{color:var(--brass);border-color:var(--brass);}
+  .clue-item.clue-done .clue-condition{text-decoration:line-through;}
   .clue-content{
     font-size:12px;line-height:1.5;color:var(--ink-dim);outline:none;
     min-height:18px;white-space:pre-wrap;overflow-wrap:break-word;
@@ -392,24 +410,26 @@
   .clue-content:empty:before{content:attr(data-placeholder);color:#5c5870;}
   .clue-content:focus{color:var(--ink);}
 
-  .clue-notes{margin-top:6px;padding-left:8px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:4px;}
-  .clue-note-row{display:flex;align-items:flex-start;gap:6px;}
-  .clue-note-content{
-    flex:1;min-width:0;font-size:11px;line-height:1.5;color:var(--ink-dim);outline:none;
+  .clue-children{
+    margin-top:6px;padding:6px;padding-left:8px;border-left:2px solid var(--line);
+    display:flex;flex-direction:column;gap:5px;border-radius:2px;
+    min-height:22px; /* always a real drop target, even with zero children */
+  }
+  .clue-children.info-drop-hover{outline:2px dashed var(--brass);outline-offset:2px;}
+  .clue-children-empty{font-size:10.5px;color:#5c5870;line-height:1.4;}
+  .clue-child-item{background:rgba(0,0,0,0.15);border-radius:2px;padding:5px 6px;}
+  .clue-child-item.clue-done{opacity:0.55;}
+  .clue-child-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;}
+  .clue-child-row .clue-check{width:14px;height:14px;line-height:12px;font-size:10px;}
+  .clue-child-row .clue-condition{font-size:11px;padding:3px 5px;}
+  .clue-child-row .clue-del{width:14px;height:14px;line-height:12px;font-size:11px;}
+  .clue-child-content{
+    font-size:11px;line-height:1.5;color:var(--ink-dim);outline:none;
     min-height:16px;white-space:pre-wrap;overflow-wrap:break-word;
   }
-  .clue-note-content:empty:before{content:attr(data-placeholder);color:#5c5870;}
-  .clue-note-content:focus{color:var(--ink);}
-  .clue-note-del{
-    flex:0 0 auto;width:14px;height:14px;line-height:13px;text-align:center;
-    color:var(--ink-dim);cursor:pointer;font-size:11px;border-radius:2px;
-  }
-  .clue-note-del:hover{color:var(--blood);}
-  .clue-add-note{
-    align-self:flex-start;font-size:10px;color:var(--ink-dim);cursor:pointer;
-    border:1px solid var(--line);border-radius:2px;padding:1px 6px;margin-top:2px;
-  }
-  .clue-add-note:hover{color:var(--brass);border-color:var(--brass);}
+  .clue-child-item.clue-done .clue-child-content{text-decoration:line-through;}
+  .clue-child-content:empty:before{content:attr(data-placeholder);color:#5c5870;}
+  .clue-child-content:focus{color:var(--ink);}
 
   .enemy-stats{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .enemy-stats-label{font-size:10px;color:var(--blood);letter-spacing:0.06em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
@@ -726,10 +746,11 @@
   @media (pointer: coarse){
     .node-head{ gap:5px; }
     .type-dot{ width:18px; height:18px; }
-    .node-add-clue{ width:22px; height:22px; line-height:20px; font-size:14px; }
     .clue-del{ width:22px; height:22px; line-height:20px; font-size:14px; }
     .node-rename{ width:24px; height:24px; line-height:22px; font-size:13px; }
     .node-dup{ width:24px; height:24px; line-height:22px; font-size:13px; }
+    .node-addnext{ width:24px; height:24px; line-height:22px; font-size:14px; }
+    .clue-check{ width:22px; height:22px; line-height:20px; font-size:13px; }
     .node-del{ width:24px; height:24px; line-height:22px; font-size:15px; }
     .connect-handle{ width:30px; height:30px; right:-13px; }
     .star-row{ gap:2px; }
@@ -747,6 +768,7 @@
     .token-drag-handle{ padding:8px 6px; font-size:16px; }
     .token-item-copy{ width:28px; height:28px; line-height:26px; font-size:16px; }
     .token-item-del{ width:28px; height:28px; line-height:26px; font-size:16px; }
+    .info-tool{ padding:10px 14px; font-size:14px; }
     .token-item-save-template{ padding:6px 9px; font-size:11.5px; }
     .token-stat-field input{ padding:6px 2px; font-size:13px; }
     .linked-token-chip{ padding:7px 10px; }
@@ -782,6 +804,8 @@
       <button class="primary" id="addBtn">＋ シーン</button>
       <button id="addNoteBtn">＋ 付箋</button>
       <button id="addRelayBtn" title="中継ノードを追加（線を経由させるための点）">＋ 中継点</button>
+      <span class="info-tool" data-role="infotool" data-kind="dice" title="ドラッグしてシーンにドロップすると、判定条件つきの情報欄を挿入します">🎲 判定情報</span>
+      <span class="info-tool" data-role="infotool" data-kind="plain" title="ドラッグしてシーンにドロップすると、自由記述の情報欄を挿入します">📝 通常情報</span>
       <button id="nodeSearchBtn" title="シーンをタイトル・本文・手がかりから検索してジャンプ">🔍 検索</button>
       <button id="undoBtn" title="元に戻す">↺</button>
       <button id="redoBtn" title="やり直す">↻</button>
@@ -873,6 +897,9 @@
           <stop offset="0%" stop-color="#8a7040"/>
           <stop offset="100%" stop-color="#7fa0c4"/>
         </linearGradient>
+        <marker id="threadArrow" viewBox="0 0 10 10" refX="7.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 1 1.5 L 8 5 L 1 8.5" fill="none" stroke="#7fa0c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
       </defs>
       <g id="linksGroup" transform="translate(6000,6000)"></g>
     </svg>
@@ -1094,6 +1121,16 @@
     openTemplatePicker(e.currentTarget);
   });
 
+  /* ---- info tools (🎲判定情報 / 📝通常情報): drag straight off the toolbar
+     and drop onto any node to spawn a blank clue of that kind there. No
+     library/panel -- each drop is a fresh, independent entry. ---- */
+  document.querySelectorAll('[data-role="infotool"]').forEach(toolEl=>{
+    toolEl.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      startInfoToolDrag(toolEl.dataset.kind, e.clientX, e.clientY);
+    });
+  });
+
   /* ---- responsive node width kept in sync with CSS ---- */
   function nodeWidth(){
     const w = window.innerWidth;
@@ -1253,6 +1290,8 @@
 
   let driveAccessToken = null;
   let driveTokenClient = null;
+  let drivePendingOp = null;    // 'upload' | 'download' -- resumed after a re-login
+  let driveAuthRetried = false; // guards against a 401 -> re-login -> 401 loop
 
   function driveCacheToken(token, expiresInSeconds){
     const expiresAt = Date.now() + (expiresInSeconds || 0) * 1000;
@@ -1291,7 +1330,15 @@
           document.getElementById('driveSignInBtn').style.display = 'none';
           document.getElementById('driveUploadBtn').style.display = '';
           document.getElementById('driveDownloadBtn').style.display = '';
+          // resume whatever the user was doing when the token expired
+          if(drivePendingOp){
+            const op = drivePendingOp;
+            drivePendingOp = null;
+            if(op === 'upload') driveUpload();
+            else if(op === 'download') driveDownload();
+          }
         }else{
+          drivePendingOp = null;
           driveSetStatus('ログインに失敗しました');
         }
       },
@@ -1366,8 +1413,23 @@
     return res.json();
   }
 
+  // token expired (typically after ~1h): silently grab a fresh one and resume
+  // the operation the user asked for. The stale in-memory token is kept so
+  // driveSignIn() uses prompt:'' (no full consent screen again).
+  function driveReauth(op){
+    drivePendingOp = op;
+    localStorage.removeItem(DRIVE_TOKEN_CACHE_KEY);
+    driveSetStatus('ログインの有効期限切れ。再ログイン中…（開かない場合は「Googleでログイン」を押してください）');
+    const signInBtn = document.getElementById('driveSignInBtn');
+    if(signInBtn) signInBtn.style.display = '';
+    driveSignIn();
+  }
+
   async function driveUpload(){
     if(!driveAccessToken){ driveSetStatus('先にログインしてください'); return; }
+    // catch an expired token *before* the doomed request -- at this point we're
+    // still inside the button-click gesture, so the re-login popup isn't blocked
+    if(!driveLoadCachedToken()){ driveReauth('upload'); return; }
     driveSetStatus('Driveに保存中…');
     try{
       save();
@@ -1380,14 +1442,21 @@
         fileId = created.id;
         localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
       }
+      driveAuthRetried = false;
       driveSetStatus('保存しました（' + new Date().toLocaleString('ja-JP') + '）');
     }catch(e){
+      if(String(e.message).includes('401') && !driveAuthRetried){
+        driveAuthRetried = true;
+        driveReauth('upload');
+        return;
+      }
       driveSetStatus('保存に失敗しました：' + e.message);
     }
   }
 
   async function driveDownload(){
     if(!driveAccessToken){ driveSetStatus('先にログインしてください'); return; }
+    if(!driveLoadCachedToken()){ driveReauth('download'); return; }
     driveSetStatus('Driveから読み込み中…');
     try{
       const fileId = await driveFindFileId();
@@ -1406,9 +1475,15 @@
       Object.keys(data.graphs).forEach(pid=>{
         localStorage.setItem(graphKey(pid), JSON.stringify(data.graphs[pid]));
       });
+      driveAuthRetried = false;
       driveSetStatus('読み込みました。再読込します…');
       setTimeout(()=> location.reload(), 600);
     }catch(e){
+      if(String(e.message).includes('401') && !driveAuthRetried){
+        driveAuthRetried = true;
+        driveReauth('download');
+        return;
+      }
       driveSetStatus('読み込みに失敗しました：' + e.message);
     }
   }
@@ -1440,8 +1515,12 @@
     const lines = [`---`, `[${n.type}] ${n.title || '(無題)'}`];
     if(n.text) lines.push(n.text);
     (n.clues||[]).forEach(c=>{
-      lines.push(`  手がかり(${c.condition||'条件未設定'}): ${c.content||''}`);
-      (c.notes||[]).forEach(nt=>{ if(nt.text) lines.push(`    補足: ${nt.text}`); });
+      const label = c.kind === 'plain' ? '情報' : `手がかり(${c.condition||'条件未設定'})`;
+      lines.push(`  ${label}${c.done?'【開示済】':''}: ${c.content||''}`);
+      (c.children||[]).forEach(ch=>{
+        const childLabel = ch.kind === 'plain' ? '情報' : `手がかり(${ch.condition||'条件未設定'})`;
+        lines.push(`    ${childLabel}${ch.done?'【開示済】':''}: ${ch.content||''}`);
+      });
     });
     return lines;
   }
@@ -2099,17 +2178,98 @@
     }, 30);
   }
 
-  function addClueToNode(n){
+  // one-tap "next scene": create a node to the right of src, already linked,
+  // stacking downward when src already has outgoing links
+  function addLinkedNode(src){
+    pushHistory();
+    const outs = state.links.filter(l=>l.from===src.id).length;
+    const n = {
+      id: uid(), x: src.x + nodeWidth() + 90, y: src.y + outs*150, title: '', text: '',
+      type: 'other', stars: 0, linkTo: null, enemyStats: '', tokenIds: [], clues: [],
+      collapsed: false,
+    };
+    state.nodes.push(n);
+    state.links.push({ id: uid(), from: src.id, to: n.id, label: '' });
+    lastFocusedNodeId = n.id;
+    render();
+    save();
+    setTimeout(()=>{
+      const el = canvas.querySelector(`[data-node-id="${n.id}"] .node-title`);
+      if(el){ el.focus(); }
+    }, 30);
+  }
+
+  /* ---- info tools (🎲判定情報 / 📝通常情報) --------------------------------
+     Drag straight off the toolbar and drop onto any node to spawn a blank
+     clue there. No reusable library -- each drop is a fresh, independent
+     entry, filled in on the spot. `kind` just toggles whether the 発見条件
+     row renders (see cluesHtml); the underlying clue shape is identical
+     either way, so future kinds only need a new toolbar tool + a render
+     branch, not a new data model. ---- */
+  function addBlankClueToNode(nodeId, kind){
+    const n = state.nodes.find(x=>x.id===nodeId);
+    if(!n) return;
     pushHistory();
     if(!Array.isArray(n.clues)) n.clues = [];
-    const clue = { id: uid(), condition: '', content: '', notes: [] };
+    const clue = { id: uid(), kind, condition: '', content: '', children: [], done: false };
     n.clues.push(clue);
     render();
     save();
     setTimeout(()=>{
-      const el = canvas.querySelector(`[data-node-id="${n.id}"] [data-clue-id="${clue.id}"] [data-role="clue-condition"]`);
+      const role = kind === 'plain' ? 'clue-content' : 'clue-condition';
+      const el = canvas.querySelector(`[data-node-id="${n.id}"] [data-clue-id="${clue.id}"] [data-role="${role}"]`);
       if(el) el.focus();
     }, 30);
+  }
+
+  let infoDragging = null; // {kind, ghostEl}
+  function startInfoToolDrag(kind, clientX, clientY){
+    const ghost = document.createElement('div');
+    ghost.className = 'info-ghost';
+    ghost.textContent = kind === 'plain' ? '📝 通常情報' : '🎲 判定情報';
+    document.body.appendChild(ghost);
+    ghost.style.left = clientX + 'px';
+    ghost.style.top = clientY + 'px';
+    infoDragging = { kind, ghostEl: ghost };
+  }
+  // dropping inside an existing clue's children-zone nests one level deep;
+  // dropping anywhere else on a node creates a new top-level clue. The zone
+  // check must come first since it's the more specific target.
+  function infoDropTarget(clientX, clientY){
+    const under = document.elementFromPoint(clientX, clientY);
+    if(!under) return null;
+    const zoneEl = under.closest('[data-role="clue-children-zone"]');
+    if(zoneEl) return { type:'child', el: zoneEl, nodeEl: zoneEl.closest('.node'), clueId: zoneEl.dataset.clueId };
+    const nodeEl = under.closest('.node');
+    if(nodeEl) return { type:'node', el: nodeEl, nodeEl };
+    return null;
+  }
+  function updateInfoToolDrag(clientX, clientY){
+    if(!infoDragging) return;
+    infoDragging.ghostEl.style.left = clientX + 'px';
+    infoDragging.ghostEl.style.top = clientY + 'px';
+    const target = infoDropTarget(clientX, clientY);
+    const hoverEl = target ? target.el : null;
+    document.querySelectorAll('.node.info-drop-hover, .clue-children.info-drop-hover').forEach(el=>{
+      if(el !== hoverEl) el.classList.remove('info-drop-hover');
+    });
+    if(hoverEl) hoverEl.classList.add('info-drop-hover');
+  }
+  function endInfoToolDrag(clientX, clientY){
+    if(!infoDragging) return;
+    const target = infoDropTarget(clientX, clientY);
+    if(target && target.nodeEl){
+      const nodeId = target.nodeEl.getAttribute('data-node-id');
+      const n = state.nodes.find(x=>x.id===nodeId);
+      if(target.type === 'child'){
+        if(n) addChildClue(n, target.clueId, infoDragging.kind);
+      }else{
+        addBlankClueToNode(nodeId, infoDragging.kind);
+      }
+    }
+    document.querySelectorAll('.node.info-drop-hover, .clue-children.info-drop-hover').forEach(el=> el.classList.remove('info-drop-hover'));
+    infoDragging.ghostEl.remove();
+    infoDragging = null;
   }
 
   function deleteClueFromNode(n, clueId){
@@ -2119,26 +2279,30 @@
     save();
   }
 
-  function addNoteToClue(n, clueId){
+  // children[] are one level of nesting only (a child never gets its own
+  // clue-children drop zone) -- kept intentionally shallow, see the design
+  // note above addBlankClueToNode.
+  function addChildClue(n, clueId, kind){
     const clue = (n.clues||[]).find(c=>c.id===clueId);
     if(!clue) return;
     pushHistory();
-    if(!Array.isArray(clue.notes)) clue.notes = [];
-    const note = { id: uid(), text: '' };
-    clue.notes.push(note);
+    if(!Array.isArray(clue.children)) clue.children = [];
+    const child = { id: uid(), kind, condition: '', content: '', done: false };
+    clue.children.push(child);
     render();
     save();
     setTimeout(()=>{
-      const el = canvas.querySelector(`[data-node-id="${n.id}"] [data-note-id="${note.id}"] [data-role="clue-note-content"]`);
+      const role = kind === 'plain' ? 'child-content' : 'child-condition';
+      const el = canvas.querySelector(`[data-node-id="${n.id}"] [data-clue-id="${clueId}"][data-child-id="${child.id}"] [data-role="${role}"]`);
       if(el) el.focus();
     }, 30);
   }
 
-  function deleteNoteFromClue(n, clueId, noteId){
+  function deleteChildClue(n, clueId, childId){
     const clue = (n.clues||[]).find(c=>c.id===clueId);
     if(!clue) return;
     pushHistory();
-    clue.notes = (clue.notes||[]).filter(nt=>nt.id!==noteId);
+    clue.children = (clue.children||[]).filter(ch=>ch.id!==childId);
     render();
     save();
   }
@@ -2175,7 +2339,7 @@
     const copy = {
       ...src, id: uid(), x: src.x + 28, y: src.y + 28,
       tokenIds: [...(src.tokenIds||[])],
-      clues: (src.clues||[]).map(c=>({...c, id: uid(), notes: (c.notes||[]).map(nt=>({...nt, id: uid()}))})),
+      clues: (src.clues||[]).map(c=>({...c, id: uid(), children: (c.children||[]).map(ch=>({...ch, id: uid()}))})),
     };
     state.nodes.push(copy);
     render();
@@ -2470,8 +2634,10 @@
       const linkedTokenCount = (n.type === 'battle' && Array.isArray(n.tokenIds)) ? new Set(n.tokenIds).size : 0;
       const enemyH = n.type === 'battle' ? (30 + linkedTokenCount*26 + Math.ceil((n.enemyStats||'').length/22)*15) : 0;
       const clueH = (n.clues && n.clues.length) ? n.clues.reduce((sum,c)=>{
-        const notesH = (c.notes||[]).reduce((s,nt)=> s + 22 + Math.ceil((nt.text||'').length/22)*14, 0);
-        return sum + 55 + Math.ceil((c.content||'').length/22)*15 + notesH + 22; // +22: add-note button row
+        const childrenH = (c.children||[]).reduce((s,ch)=>
+          s + (ch.kind === 'plain' ? 24 : 44) + Math.ceil((ch.content||'').length/22)*14, 26);
+        const rowH = c.kind === 'plain' ? 30 : 55; // plain clues skip the 発見条件 input row
+        return sum + rowH + Math.ceil((c.content||'').length/22)*15 + childrenH;
       }, 0) : 0;
       const linkH = 26;
       const currentRowH = 26;
@@ -2632,7 +2798,7 @@
     function matches(n, q){
       if((n.title||'').toLowerCase().includes(q)) return true;
       if((n.text||'').toLowerCase().includes(q)) return true;
-      if(Array.isArray(n.clues) && n.clues.some(c => (c.content||'').toLowerCase().includes(q) || (c.condition||'').toLowerCase().includes(q) || (Array.isArray(c.notes) && c.notes.some(nt=>(nt.text||'').toLowerCase().includes(q))))) return true;
+      if(Array.isArray(n.clues) && n.clues.some(c => (c.content||'').toLowerCase().includes(q) || (c.condition||'').toLowerCase().includes(q) || (Array.isArray(c.children) && c.children.some(ch=>(ch.content||'').toLowerCase().includes(q) || (ch.condition||'').toLowerCase().includes(q))))) return true;
       return false;
     }
     function renderList(filter){
@@ -2981,19 +3147,23 @@
       const cluesHtml = (n.clues && n.clues.length) ? `
         <div class="clue-list">
           ${n.clues.map(c => `
-            <div class="clue-item" data-clue-id="${c.id}">
+            <div class="clue-item${c.done?' clue-done':''}" data-clue-id="${c.id}">
               <div class="clue-row">
-                <input type="text" class="clue-condition" data-role="clue-condition" data-clue-id="${c.id}" placeholder="発見条件（例: 目星50）" value="${escapeHtml(c.condition||'')}" />
+                <span class="clue-check" data-role="clue-check" data-clue-id="${c.id}" title="セッション中に開示したらチェック">${c.done?'✓':''}</span>
+                ${c.kind === 'plain' ? '' : `<input type="text" class="clue-condition" data-role="clue-condition" data-clue-id="${c.id}" placeholder="発見条件（例: 目星50）" value="${escapeHtml(c.condition||'')}" />`}
                 <span class="clue-del" data-role="clue-del" data-clue-id="${c.id}" title="削除">×</span>
               </div>
-              <div class="clue-content" contenteditable="true" spellcheck="false" data-role="clue-content" data-clue-id="${c.id}" data-placeholder="手がかりの内容...">${escapeHtml(c.content||'')}</div>
-              <div class="clue-notes">
-                ${(c.notes||[]).map(nt => `
-                  <div class="clue-note-row" data-note-id="${nt.id}">
-                    <div class="clue-note-content" contenteditable="true" spellcheck="false" data-role="clue-note-content" data-clue-id="${c.id}" data-note-id="${nt.id}" data-placeholder="補足情報...">${escapeHtml(nt.text||'')}</div>
-                    <span class="clue-note-del" data-role="clue-note-del" data-clue-id="${c.id}" data-note-id="${nt.id}" title="削除">×</span>
-                  </div>`).join('')}
-                <span class="clue-add-note" data-role="addnote" data-clue-id="${c.id}" title="この手がかりに補足情報を追加">＋ 補足情報</span>
+              <div class="clue-content" contenteditable="true" spellcheck="false" data-role="clue-content" data-clue-id="${c.id}" data-placeholder="${c.kind === 'plain' ? '内容（自由記述）...' : '手がかりの内容...'}">${escapeHtml(c.content||'')}</div>
+              <div class="clue-children" data-role="clue-children-zone" data-clue-id="${c.id}">
+                ${(c.children||[]).length ? (c.children||[]).map(ch => `
+                  <div class="clue-child-item${ch.done?' clue-done':''}" data-clue-id="${c.id}" data-child-id="${ch.id}">
+                    <div class="clue-child-row">
+                      <span class="clue-check" data-role="child-check" data-clue-id="${c.id}" data-child-id="${ch.id}" title="開示したらチェック">${ch.done?'✓':''}</span>
+                      ${ch.kind === 'plain' ? '' : `<input type="text" class="clue-condition" data-role="child-condition" data-clue-id="${c.id}" data-child-id="${ch.id}" placeholder="発見条件（例: 目星50）" value="${escapeHtml(ch.condition||'')}" />`}
+                      <span class="clue-del" data-role="child-del" data-clue-id="${c.id}" data-child-id="${ch.id}" title="削除">×</span>
+                    </div>
+                    <div class="clue-child-content" contenteditable="true" spellcheck="false" data-role="child-content" data-clue-id="${c.id}" data-child-id="${ch.id}" data-placeholder="${ch.kind === 'plain' ? '内容（自由記述）...' : '手がかりの内容...'}">${escapeHtml(ch.content||'')}</div>
+                  </div>`).join('') : '<div class="clue-children-empty">🎲/📝をここにドロップすると、この情報の中に入れ子で追加できます</div>'}
               </div>
             </div>`).join('')}
         </div>` : '';
@@ -3002,7 +3172,10 @@
         const preview = (n.text||'').trim();
         const previewText = preview ? (preview.length > 46 ? preview.slice(0,46) + '…' : preview) : '（内容なし）';
         const badges = [];
-        if(n.clues && n.clues.length) badges.push(`手がかり${n.clues.length}`);
+        if(n.clues && n.clues.length){
+          const done = n.clues.filter(c=>c.done).length;
+          badges.push(done ? `手がかり ${done}/${n.clues.length} 開示` : `手がかり${n.clues.length}`);
+        }
         if(n.type === 'battle' && (n.enemyStats||'').trim()) badges.push('敵ステータスあり');
         if(n.type === 'battle' && Array.isArray(n.tokenIds) && n.tokenIds.length) badges.push(`駒${n.tokenIds.length}`);
         if(n.type === 'ending') badges.push('★' + (n.stars||0));
@@ -3030,7 +3203,7 @@
         <div class="node-head">
           <div class="node-head-icons">
             <span class="type-dot" style="background:${t.color}" data-role="typedot"></span>
-            <span class="node-add-clue" data-role="addclue" title="手がかりを追加">＋</span>
+            <span class="node-addnext" data-role="addnext" title="次のシーンを追加して接続">⤷</span>
             <span class="node-rename" data-role="rename" title="名前を変更">✎</span>
             <span class="node-dup" data-role="dup" title="複製">⧉</span>
             <span class="node-del" data-role="del">×</span>
@@ -3065,7 +3238,7 @@
       // drag node by header (pointer events: mouse + touch)
       const head = el.querySelector('.node-head');
       head.addEventListener('pointerdown', (e)=>{
-        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addclue') return;
+        if(e.target.dataset.role==='del' || e.target.dataset.role==='typedot' || e.target.dataset.role==='dup' || e.target.dataset.role==='rename' || e.target.dataset.role==='addnext') return;
         if(e.ctrlKey || e.metaKey){
           e.stopPropagation();
           e.preventDefault();
@@ -3159,9 +3332,9 @@
         document.execCommand('selectAll', false, null);
       });
 
-      el.querySelector('[data-role="addclue"]').addEventListener('click', (e)=>{
+      el.querySelector('[data-role="addnext"]').addEventListener('click', (e)=>{
         e.stopPropagation();
-        addClueToNode(n);
+        addLinkedNode(n);
       });
 
       const textEl = el.querySelector('[data-role="text"]');
@@ -3206,30 +3379,62 @@
           deleteClueFromNode(n, delEl.dataset.clueId);
         });
       });
-      el.querySelectorAll('[data-role="clue-note-content"]').forEach(noteEl=>{
-        const clueId = noteEl.dataset.clueId, noteId = noteEl.dataset.noteId;
-        noteEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
-        noteEl.addEventListener('focus', ()=>{ noteEl.dataset.before = noteEl.textContent; });
-        noteEl.addEventListener('blur', ()=>{
-          const val = noteEl.textContent.trim();
+      el.querySelectorAll('[data-role="clue-check"]').forEach(checkEl=>{
+        checkEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        checkEl.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          const clue = (n.clues||[]).find(c=>c.id===checkEl.dataset.clueId);
+          if(!clue) return;
+          pushHistory();
+          clue.done = !clue.done;
+          render(); save(); applyViewport();
+        });
+      });
+      el.querySelectorAll('[data-role="child-condition"]').forEach(inputEl=>{
+        const clueId = inputEl.dataset.clueId, childId = inputEl.dataset.childId;
+        inputEl.addEventListener('focus', ()=>{ inputEl.dataset.before = inputEl.value; });
+        inputEl.addEventListener('blur', ()=>{
+          const val = inputEl.value.trim();
           const clue = (n.clues||[]).find(c=>c.id===clueId);
-          const note = clue && (clue.notes||[]).find(nt=>nt.id===noteId);
-          if(note){
-            if(val !== noteEl.dataset.before) pushHistory();
-            note.text = val; save(); render(); applyViewport();
+          const child = clue && (clue.children||[]).find(ch=>ch.id===childId);
+          if(child){
+            if(val !== inputEl.dataset.before) pushHistory();
+            child.condition = val; save();
+          }
+        });
+        inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); inputEl.blur(); } });
+        inputEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+      });
+      el.querySelectorAll('[data-role="child-content"]').forEach(contentEl=>{
+        const clueId = contentEl.dataset.clueId, childId = contentEl.dataset.childId;
+        contentEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        contentEl.addEventListener('focus', ()=>{ contentEl.dataset.before = contentEl.textContent; });
+        contentEl.addEventListener('blur', ()=>{
+          const val = contentEl.textContent.trim();
+          const clue = (n.clues||[]).find(c=>c.id===clueId);
+          const child = clue && (clue.children||[]).find(ch=>ch.id===childId);
+          if(child){
+            if(val !== contentEl.dataset.before) pushHistory();
+            child.content = val; save(); render(); applyViewport();
           }
         });
       });
-      el.querySelectorAll('[data-role="clue-note-del"]').forEach(delEl=>{
-        delEl.addEventListener('click', (e)=>{
+      el.querySelectorAll('[data-role="child-check"]').forEach(checkEl=>{
+        checkEl.addEventListener('pointerdown', (e)=> e.stopPropagation());
+        checkEl.addEventListener('click', (e)=>{
           e.stopPropagation();
-          deleteNoteFromClue(n, delEl.dataset.clueId, delEl.dataset.noteId);
+          const clue = (n.clues||[]).find(c=>c.id===checkEl.dataset.clueId);
+          const child = clue && (clue.children||[]).find(ch=>ch.id===checkEl.dataset.childId);
+          if(!child) return;
+          pushHistory();
+          child.done = !child.done;
+          render(); save(); applyViewport();
         });
       });
-      el.querySelectorAll('[data-role="addnote"]').forEach(addEl=>{
-        addEl.addEventListener('click', (e)=>{
+      el.querySelectorAll('[data-role="child-del"]').forEach(delEl=>{
+        delEl.addEventListener('click', (e)=>{
           e.stopPropagation();
-          addNoteToClue(n, addEl.dataset.clueId);
+          deleteChildClue(n, delEl.dataset.clueId, delEl.dataset.childId);
         });
       });
 
@@ -3354,6 +3559,8 @@
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
       path.setAttribute('d', pathBetween(p1,p2));
       path.setAttribute('class','link');
+      // arrowhead on the destination end so the scenario's flow direction is visible
+      path.setAttribute('marker-end','url(#threadArrow)');
       path.style.pointerEvents = 'stroke';
       linksGroup.appendChild(path);
 
@@ -3435,6 +3642,10 @@
 
     if(tokenDragging){
       updateTokenDrag(e.clientX, e.clientY);
+      return;
+    }
+    if(infoDragging){
+      updateInfoToolDrag(e.clientX, e.clientY);
       return;
     }
 
@@ -3536,6 +3747,10 @@
   function handlePointerEnd(e){
     if(tokenDragging){
       endTokenDrag(e.clientX, e.clientY);
+      return;
+    }
+    if(infoDragging){
+      endInfoToolDrag(e.clientX, e.clientY);
       return;
     }
     activePointers.delete(e.pointerId);
