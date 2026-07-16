@@ -59,7 +59,7 @@
     border-bottom:1px solid var(--line);
     backdrop-filter:blur(4px);
   }
-  .brand{display:flex;align-items:center;gap:8px;min-width:0;overflow:visible;position:relative;}
+  .brand{display:flex;align-items:center;gap:8px;flex:0 0 auto;overflow:visible;position:relative;}
   .brand h1{
     font-family:'Shippori Mincho',serif;font-weight:700;font-size:18px;
     margin:0;letter-spacing:0.08em;color:var(--ink);white-space:nowrap;
@@ -2600,9 +2600,7 @@
 
   function addLink(fromId, toId){
     if(fromId===toId) return;
-    const exists = state.links.some(l =>
-      (l.from===fromId && l.to===toId) || (l.from===toId && l.to===fromId)
-    );
+    const exists = state.links.some(l => l.from===fromId && l.to===toId);
     if(exists) return;
     pushHistory();
     state.links.push({ id: uid(), from: fromId, to: toId, label: '' });
@@ -2668,10 +2666,11 @@
     return state.nodes.some(x=>x.id===id) || state.relays.some(x=>x.id===id);
   }
 
-  function pathBetween(p1, p2){
+  function pathBetween(p1, p2, bow){
+    bow = bow || 0;
     const dx = Math.max(60, Math.abs(p2.x - p1.x) * 0.5);
-    const c1x = p1.x + dx, c1y = p1.y;
-    const c2x = p2.x - dx, c2y = p2.y;
+    const c1x = p1.x + dx, c1y = p1.y + bow;
+    const c2x = p2.x - dx, c2y = p2.y + bow;
     return `M ${p1.x} ${p1.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
   }
 
@@ -3556,15 +3555,19 @@
       if(!anchorExists(l.from) || !anchorExists(l.to)) return;
       const p1 = anchorPoint(l.from, 'right');
       const p2 = anchorPoint(l.to, 'left');
+      // a reciprocal link (B->A alongside A->B) would otherwise draw on the exact
+      // same curve -- bow the two directions apart so each stays readable/clickable
+      const hasReverse = state.links.some(o => o.from===l.to && o.to===l.from);
+      const bow = hasReverse ? (l.from < l.to ? -34 : 34) : 0;
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-      path.setAttribute('d', pathBetween(p1,p2));
+      path.setAttribute('d', pathBetween(p1,p2,bow));
       path.setAttribute('class','link');
       // arrowhead on the destination end so the scenario's flow direction is visible
       path.setAttribute('marker-end','url(#threadArrow)');
       path.style.pointerEvents = 'stroke';
       linksGroup.appendChild(path);
 
-      const midx = (p1.x+p2.x)/2, midy = (p1.y+p2.y)/2;
+      const midx = (p1.x+p2.x)/2, midy = (p1.y+p2.y)/2 + bow*0.75;
       const star = document.createElementNS('http://www.w3.org/2000/svg','circle');
       star.setAttribute('cx', midx); star.setAttribute('cy', midy);
       star.setAttribute('r', 2.4);
